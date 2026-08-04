@@ -1,4 +1,4 @@
-# brittle-lua
+# brittle-lua-api-def
 
 A Rust proc-macro library for defining Lua configuration APIs, built on
 [mlua](https://github.com/mlua-rs/mlua) with Lua 5.5.

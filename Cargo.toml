@@ -1,0 +1,13 @@
+[workspace]
+resolver = "3"
+members = [
+    "brittle-lua-core",
+    "brittle-lua-macros",
+    "brittle-lua",
+]
+
+[workspace.dependencies]
+mlua = { version = "0.10", features = ["luau", "serialize"] }
+syn = { version = "2", features = ["full"] }
+quote = "1"
+proc-macro2 = "1"

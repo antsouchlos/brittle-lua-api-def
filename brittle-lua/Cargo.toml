@@ -1,0 +1,9 @@
+[package]
+name = "brittle-lua"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+brittle-lua-core = { path = "../brittle-lua-core" }
+brittle-lua-macros = { path = "../brittle-lua-macros" }
+mlua = { workspace = true }

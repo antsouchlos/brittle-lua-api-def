@@ -57,7 +57,10 @@ fn get_original_items(item_mod: &syn::ItemMod) -> Vec<TokenStream> {
         .iter()
         .map(|item| {
             let is_lua_item = match item {
-                syn::Item::Struct(s) => s.attrs.iter().any(|a| a.path().is_ident("luaclass")),
+                syn::Item::Struct(s) => {
+                    s.attrs.iter().any(|a| a.path().is_ident("luaclass"))
+                        || s.attrs.iter().any(|a| a.path().is_ident("lua_newtype"))
+                }
                 syn::Item::Impl(i) => i.attrs.iter().any(|a| a.path().is_ident("luamethods")),
                 syn::Item::Fn(f) => f.attrs.iter().any(|a| a.path().is_ident("luafunction")),
                 _ => false,
@@ -78,31 +81,56 @@ fn strip_lua_attrs(item: &syn::Item) -> TokenStream {
             let attrs: Vec<_> = s
                 .attrs
                 .iter()
-                .filter(|a| !a.path().is_ident("luaclass"))
+                .filter(|a| !a.path().is_ident("luaclass") && !a.path().is_ident("lua_newtype"))
                 .collect();
             let vis = &s.vis;
             let ident = &s.ident;
             let generics = &s.generics;
-            let fields: Vec<_> = s
-                .fields
-                .iter()
-                .map(|f| {
-                    let f_attrs: Vec<_> = f
-                        .attrs
+
+            let struct_body = match &s.fields {
+                syn::Fields::Named(named) => {
+                    let fields: Vec<_> = named
+                        .named
                         .iter()
-                        .filter(|a| !a.path().is_ident("lua"))
+                        .map(|f| {
+                            let f_attrs: Vec<_> = f
+                                .attrs
+                                .iter()
+                                .filter(|a| !a.path().is_ident("lua"))
+                                .collect();
+                            let f_vis = &f.vis;
+                            let f_ident = &f.ident;
+                            let ty = &f.ty;
+                            quote! { #(#f_attrs)* #f_vis #f_ident: #ty }
+                        })
                         .collect();
-                    let ident = &f.ident;
-                    let ty = &f.ty;
-                    quote! { #(#f_attrs)* #vis #ident: #ty }
-                })
-                .collect();
+
+                    quote! { { #(#fields,)* } }
+                }
+                syn::Fields::Unnamed(unnamed) => {
+                    let fields: Vec<_> = unnamed
+                        .unnamed
+                        .iter()
+                        .map(|f| {
+                            let f_attrs: Vec<_> = f
+                                .attrs
+                                .iter()
+                                .filter(|a| !a.path().is_ident("lua"))
+                                .collect();
+                            let f_vis = &f.vis;
+                            let ty = &f.ty;
+                            quote! { #(#f_attrs)* #f_vis #ty }
+                        })
+                        .collect();
+
+                    quote! { (#(#fields,)*); }
+                }
+                syn::Fields::Unit => quote! { ; },
+            };
 
             quote! {
                 #(#attrs)*
-                #vis struct #ident #generics {
-                    #(#fields,)*
-                }
+                #vis struct #ident #generics #struct_body
             }
         }
         syn::Item::Impl(i) => {

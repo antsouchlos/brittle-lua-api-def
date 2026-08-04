@@ -114,6 +114,33 @@ mod api_rename {
     }
 }
 
+#[brittle_lua::lua_module(crate = "brittle_lua")]
+mod api_newtype {
+    #[lua_newtype(to = "string")]
+    #[derive(Debug, Clone)]
+    pub struct LuaPathBuf(pub String);
+
+    impl mlua::FromLua for LuaPathBuf {
+        fn from_lua(value: mlua::Value, lua: &mlua::Lua) -> mlua::Result<Self> {
+            let s: String = mlua::FromLua::from_lua(value, lua)?;
+            Ok(LuaPathBuf(s))
+        }
+    }
+
+    impl mlua::IntoLua for LuaPathBuf {
+        fn into_lua(self, lua: &mlua::Lua) -> mlua::Result<mlua::Value> {
+            self.0.into_lua(lua)
+        }
+    }
+
+    #[luaclass]
+    #[derive(Clone)]
+    pub struct AppConfig {
+        pub data_dir: LuaPathBuf,
+        pub port: u16,
+    }
+}
+
 #[test]
 fn register_and_create_proxy() {
     let lua = Lua::new();
@@ -276,5 +303,38 @@ fn test_emmylua_contains_all_annotations() {
     assert!(emmy.contains("@param name string"));
     assert!(emmy.contains("@return string"));
 
+    assert!(emmy.contains("return {}"));
+}
+
+#[test]
+fn test_newtype_from_lua_deserializes_string() {
+    let lua = Lua::new();
+    api_newtype::register(&lua).expect("register");
+
+    let config: api_newtype::AppConfig = lua
+        .load("return { data_dir = '/var/lib/app', port = 8080 }")
+        .eval()
+        .expect("eval");
+
+    assert_eq!(config.data_dir.0, "/var/lib/app");
+    assert_eq!(config.port, 8080);
+}
+
+#[test]
+fn test_newtype_emmylua_maps_to_string() {
+    let emmy = api_newtype::EMMY_LUA;
+
+    assert!(
+        emmy.contains("@field data_dir string"),
+        "expected `string` for data_dir, got:\n{}",
+        emmy
+    );
+    assert!(
+        !emmy.contains("LuaPathBuf"),
+        "EMMY_LUA should not reference the wrapper type LuaPathBuf:\n{}",
+        emmy
+    );
+    assert!(emmy.contains("@class AppConfig"));
+    assert!(emmy.contains("@field port integer"));
     assert!(emmy.contains("return {}"));
 }

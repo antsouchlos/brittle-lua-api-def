@@ -115,6 +115,7 @@ mod tests {
     use super::*;
     use crate::ir::{ClassDef, FieldDef, FnDef, MethodDef, ModuleDef, ReceiverKind};
     use proc_macro2::Span;
+    use std::collections::BTreeMap;
     use syn::parse_quote;
 
     fn call_site() -> Span {
@@ -142,6 +143,7 @@ mod tests {
         let module = ModuleDef {
             classes: vec![class_a, class_b],
             functions: vec![],
+            type_map: BTreeMap::new(),
         };
         let result = validate(&module);
         assert!(result.is_err());
@@ -185,6 +187,7 @@ mod tests {
         let module = ModuleDef {
             classes: vec![class],
             functions: vec![],
+            type_map: BTreeMap::new(),
         };
         let result = validate(&module);
         assert!(result.is_err());
@@ -218,6 +221,7 @@ mod tests {
         let module = ModuleDef {
             classes: vec![],
             functions: vec![func_a, func_b],
+            type_map: BTreeMap::new(),
         };
         let result = validate(&module);
         assert!(result.is_err());
@@ -250,6 +254,7 @@ mod tests {
         let module = ModuleDef {
             classes: vec![class],
             functions: vec![],
+            type_map: BTreeMap::new(),
         };
         let result = validate(&module);
         assert!(result.is_err());
@@ -282,6 +287,7 @@ mod tests {
         let module = ModuleDef {
             classes: vec![class],
             functions: vec![],
+            type_map: BTreeMap::new(),
         };
         let result = validate(&module);
         assert!(result.is_ok());
@@ -309,6 +315,7 @@ mod tests {
         let module = ModuleDef {
             classes: vec![class],
             functions: vec![],
+            type_map: BTreeMap::new(),
         };
         let result = validate(&module);
         assert!(result.is_ok());
@@ -337,6 +344,7 @@ mod tests {
         let module = ModuleDef {
             classes: vec![class],
             functions: vec![],
+            type_map: BTreeMap::new(),
         };
         let result = validate(&module);
         assert!(result.is_err());
@@ -388,6 +396,7 @@ mod tests {
         let module = ModuleDef {
             classes: vec![class],
             functions: vec![func],
+            type_map: BTreeMap::new(),
         };
         let result = validate(&module);
         assert!(result.is_ok());
@@ -455,6 +464,7 @@ mod tests {
         let module = ModuleDef {
             classes: vec![class_a, class_b, class_c],
             functions: vec![],
+            type_map: BTreeMap::new(),
         };
         let result = validate(&module);
         assert!(result.is_err());

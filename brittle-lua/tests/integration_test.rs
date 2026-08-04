@@ -270,11 +270,11 @@ fn test_emmylua_contains_all_annotations() {
 
     assert!(emmy.contains("@field get_bind fun(self): string"));
     assert!(emmy.contains("@field set_port fun(self, port: integer)"));
-    assert!(emmy.contains("@field new fun(port: integer):"));
+    assert!(emmy.contains("@field new fun(port: integer): ServerConfig"));
 
     assert!(emmy.contains("function env(name) end"));
     assert!(emmy.contains("@param name string"));
-    assert!(emmy.contains("@return Result"));
+    assert!(emmy.contains("@return string"));
 
     assert!(emmy.contains("return {}"));
 }

@@ -1,5 +1,6 @@
 use proc_macro2::TokenStream;
 use quote::quote;
+use syn::Type;
 
 use crate::ir::{ClassDef, FnDef, ModuleDef};
 
@@ -55,7 +56,7 @@ fn emit_class(parts: &mut Vec<String>, class: &ClassDef) {
     parts.push(String::new());
 }
 
-fn emit_method(parts: &mut Vec<String>, method: &crate::ir::MethodDef, _class_name: &str) {
+fn emit_method(parts: &mut Vec<String>, method: &crate::ir::MethodDef, class_name: &str) {
     if let Some(ref doc) = method.doc {
         for line in doc.lines() {
             parts.push(format!("--- {}", line.trim()));
@@ -64,7 +65,13 @@ fn emit_method(parts: &mut Vec<String>, method: &crate::ir::MethodDef, _class_na
 
     let ret_type = match &method.ret {
         syn::ReturnType::Type(_, ty) => {
-            let emmy = super::type_mapper::rust_type_to_emmylua(ty);
+            let inner = if method.is_fallible {
+                unwrap_result_type(ty)
+            } else {
+                ty.as_ref().clone()
+            };
+            let resolved = resolve_self(&inner, class_name);
+            let emmy = super::type_mapper::rust_type_to_emmylua(&resolved);
             format!(" {}", emmy)
         }
         syn::ReturnType::Default => String::new(),
@@ -119,7 +126,13 @@ fn emit_free_function(parts: &mut Vec<String>, func: &FnDef) {
 
     let ret_type = match &func.ret {
         syn::ReturnType::Type(_, ty) => {
-            let emmy = super::type_mapper::rust_type_to_emmylua(ty);
+            let inner = if func.is_fallible {
+                unwrap_result_type(ty)
+            } else {
+                ty.as_ref().clone()
+            };
+
+            let emmy = super::type_mapper::rust_type_to_emmylua(&inner);
             format!("--- @return {}", emmy)
         }
         syn::ReturnType::Default => String::new(),
@@ -142,10 +155,85 @@ fn emit_free_function(parts: &mut Vec<String>, func: &FnDef) {
     parts.push(String::new());
 }
 
+fn unwrap_result_type(ty: &Type) -> Type {
+    if let Type::Path(typepath) = ty {
+        if let Some(segment) = typepath.path.segments.last() {
+            if segment.ident == "Result" || segment.ident == "LuaResult" {
+                if let syn::PathArguments::AngleBracketed(args) = &segment.arguments {
+                    if let Some(syn::GenericArgument::Type(inner)) = args.args.first() {
+                        return inner.clone();
+                    }
+                }
+            }
+        }
+    }
+
+    ty.clone()
+}
+
+fn resolve_self(ty: &Type, class_name: &str) -> Type {
+    match ty {
+        Type::Path(typepath) => {
+            let resolved_segments: Vec<_> = typepath
+                .path
+                .segments
+                .iter()
+                .map(|seg| {
+                    if seg.ident == "Self" {
+                        let mut new_seg = seg.clone();
+                        new_seg.ident = syn::Ident::new(class_name, seg.ident.span());
+                        new_seg
+                    } else {
+                        let mut new_seg = seg.clone();
+                        new_seg.arguments = resolve_self_args(&seg.arguments, class_name);
+                        new_seg
+                    }
+                })
+                .collect();
+
+            let mut new_path = typepath.path.clone();
+            new_path.segments = syn::punctuated::Punctuated::from_iter(resolved_segments);
+
+            Type::Path(syn::TypePath {
+                qself: typepath.qself.clone(),
+                path: new_path,
+            })
+        }
+        Type::Reference(ref_type) => {
+            let mut new_ref = ref_type.clone();
+            new_ref.elem = Box::new(resolve_self(&ref_type.elem, class_name));
+            Type::Reference(new_ref)
+        }
+        other => other.clone(),
+    }
+}
+
+fn resolve_self_args(args: &syn::PathArguments, class_name: &str) -> syn::PathArguments {
+    match args {
+        syn::PathArguments::AngleBracketed(ab) => {
+            let resolved: Vec<_> = ab
+                .args
+                .iter()
+                .map(|arg| match arg {
+                    syn::GenericArgument::Type(ty) => {
+                        syn::GenericArgument::Type(resolve_self(ty, class_name))
+                    }
+                    other => other.clone(),
+                })
+                .collect();
+
+            let mut new_ab = ab.clone();
+            new_ab.args = syn::punctuated::Punctuated::from_iter(resolved);
+            syn::PathArguments::AngleBracketed(new_ab)
+        }
+        other => other.clone(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ir::{ClassDef, FieldDef, MethodDef};
+    use crate::ir::{ClassDef, FieldDef, FnDef, MethodDef};
     use proc_macro2::Span;
     use syn::parse_quote;
 
@@ -236,5 +324,161 @@ mod tests {
         let output = tokens.to_string();
 
         assert!(output.contains("return {}"));
+    }
+
+    #[test]
+    fn test_fallible_method_unwraps_result() {
+        let class = ClassDef {
+            ident: parse_quote! { Server },
+            lua_name: "Server".to_string(),
+            doc: None,
+            fields: vec![],
+            methods: vec![MethodDef {
+                ident: parse_quote! { fetch },
+                lua_name: "fetch".to_string(),
+                doc: None,
+                receiver: crate::ir::ReceiverKind::Ref,
+                args: vec![],
+                ret: syn::ReturnType::Type(
+                    parse_quote! { -> },
+                    Box::new(parse_quote! { Result<String, mlua::Error> }),
+                ),
+                is_fallible: true,
+                span: Span::call_site(),
+            }],
+            span: Span::call_site(),
+        };
+        let module = ModuleDef {
+            classes: vec![class],
+            functions: vec![],
+        };
+        let tokens = generate(&module);
+        let output = tokens.to_string();
+
+        assert!(
+            output.contains("fun(self): string"),
+            "expected `string` return, got: {}",
+            output
+        );
+    }
+
+    #[test]
+    fn test_infallible_method_passes_type_through() {
+        let class = ClassDef {
+            ident: parse_quote! { Server },
+            lua_name: "Server".to_string(),
+            doc: None,
+            fields: vec![],
+            methods: vec![MethodDef {
+                ident: parse_quote! { port },
+                lua_name: "port".to_string(),
+                doc: None,
+                receiver: crate::ir::ReceiverKind::Ref,
+                args: vec![],
+                ret: syn::ReturnType::Type(parse_quote! { -> }, Box::new(parse_quote! { u16 })),
+                is_fallible: false,
+                span: Span::call_site(),
+            }],
+            span: Span::call_site(),
+        };
+        let module = ModuleDef {
+            classes: vec![class],
+            functions: vec![],
+        };
+        let tokens = generate(&module);
+        let output = tokens.to_string();
+
+        assert!(
+            output.contains("fun(self): integer"),
+            "expected `integer` return, got: {}",
+            output
+        );
+    }
+
+    #[test]
+    fn test_constructor_resolves_self() {
+        let class = ClassDef {
+            ident: parse_quote! { AppConfig },
+            lua_name: "AppConfig".to_string(),
+            doc: None,
+            fields: vec![],
+            methods: vec![MethodDef {
+                ident: parse_quote! { new },
+                lua_name: "new".to_string(),
+                doc: None,
+                receiver: crate::ir::ReceiverKind::None,
+                args: vec![],
+                ret: syn::ReturnType::Type(
+                    parse_quote! { -> },
+                    Box::new(parse_quote! { mlua::Result<Self> }),
+                ),
+                is_fallible: true,
+                span: Span::call_site(),
+            }],
+            span: Span::call_site(),
+        };
+        let module = ModuleDef {
+            classes: vec![class],
+            functions: vec![],
+        };
+        let tokens = generate(&module);
+        let output = tokens.to_string();
+
+        assert!(
+            output.contains("fun(): AppConfig"),
+            "expected `AppConfig` return, got: {}",
+            output
+        );
+    }
+
+    #[test]
+    fn test_fallible_function_unwraps_result() {
+        let module = ModuleDef {
+            classes: vec![],
+            functions: vec![FnDef {
+                ident: parse_quote! { compute },
+                lua_name: "compute".to_string(),
+                doc: None,
+                args: vec![],
+                ret: syn::ReturnType::Type(
+                    parse_quote! { -> },
+                    Box::new(parse_quote! { Result<i64, mlua::Error> }),
+                ),
+                is_fallible: true,
+                span: Span::call_site(),
+            }],
+        };
+        let tokens = generate(&module);
+        let output = tokens.to_string();
+
+        assert!(
+            output.contains("--- @return integer"),
+            "expected `integer` return, got: {}",
+            output
+        );
+    }
+
+    #[test]
+    fn test_infallible_function_passes_type_through() {
+        let module = ModuleDef {
+            classes: vec![],
+            functions: vec![FnDef {
+                ident: parse_quote! { get_value },
+                lua_name: "get_value".to_string(),
+                doc: None,
+                args: vec![],
+                ret: syn::ReturnType::Type(parse_quote! { -> }, Box::new(parse_quote! { String })),
+                is_fallible: false,
+                span: Span::call_site(),
+            }],
+        };
+        let tokens = generate(&module);
+        let output = tokens.to_string();
+
+        assert!(
+            output.contains("--- @return string"),
+            "expected `string` return, got: {}",
+            output
+        );
     }
 }

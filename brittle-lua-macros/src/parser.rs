@@ -3,17 +3,24 @@ use std::collections::BTreeMap;
 use syn::Ident;
 
 use crate::ir::{ClassDef, FieldDef, FnDef, MethodDef, ModuleDef, ReceiverKind};
-use crate::util::{detect_fallibility, extract_doc, ClassAttrs, FieldAttrs, MethodAttrs};
+use crate::util::{
+    detect_fallibility, extract_doc, ClassAttrs, FieldAttrs, MethodAttrs, NewtypeAttrs,
+};
 
 pub fn parse(item_mod: &syn::ItemMod) -> syn::Result<ModuleDef> {
     let mut classes: Vec<ClassDef> = Vec::new();
     let mut methods_map: BTreeMap<String, Vec<MethodDef>> = BTreeMap::new();
     let mut functions: Vec<FnDef> = Vec::new();
+    let mut type_map: BTreeMap<String, String> = BTreeMap::new();
 
     let items = match &item_mod.content {
         Some((_, items)) => items,
         None => {
-            return Ok(ModuleDef { classes, functions });
+            return Ok(ModuleDef {
+                classes,
+                functions,
+                type_map,
+            });
         }
     };
 
@@ -23,6 +30,14 @@ pub fn parse(item_mod: &syn::ItemMod) -> syn::Result<ModuleDef> {
                 if has_attr(&s.attrs, "luaclass") {
                     let class = parse_class(s)?;
                     classes.push(class);
+                }
+
+                if has_attr(&s.attrs, "lua_newtype") {
+                    let newtype = NewtypeAttrs::parse(&s.attrs)?;
+                    let rust_name = s.ident.to_string();
+                    let lua_type = newtype.lua_type.expect("lua_newtype must have lua_type");
+
+                    type_map.insert(rust_name, lua_type);
                 }
             }
             syn::Item::Impl(imp) => {
@@ -52,7 +67,11 @@ pub fn parse(item_mod: &syn::ItemMod) -> syn::Result<ModuleDef> {
     classes.sort_by(|a, b| a.ident.to_string().cmp(&b.ident.to_string()));
     functions.sort_by(|a, b| a.ident.to_string().cmp(&b.ident.to_string()));
 
-    Ok(ModuleDef { classes, functions })
+    Ok(ModuleDef {
+        classes,
+        functions,
+        type_map,
+    })
 }
 
 fn has_attr(attrs: &[syn::Attribute], name: &str) -> bool {
@@ -399,5 +418,54 @@ mod tests {
 
         assert!(result.classes.is_empty());
         assert!(result.functions.is_empty());
+    }
+
+    #[test]
+    fn test_lua_newtype_collects_type_map() {
+        let item_mod: syn::ItemMod = parse_quote! {
+            mod test_mod {
+                #[lua_newtype(to = "string")]
+                struct LuaPathBuf;
+
+                #[lua_newtype(to = "number")]
+                struct LuaDuration;
+            }
+        };
+
+        let result = parse(&item_mod).unwrap();
+
+        assert_eq!(result.type_map.len(), 2);
+        assert_eq!(
+            result.type_map.get("LuaPathBuf"),
+            Some(&"string".to_string())
+        );
+        assert_eq!(
+            result.type_map.get("LuaDuration"),
+            Some(&"number".to_string())
+        );
+    }
+
+    #[test]
+    fn test_lua_newtype_alongside_luaclass() {
+        let item_mod: syn::ItemMod = parse_quote! {
+            mod test_mod {
+                #[lua_newtype(to = "string")]
+                struct LuaPathBuf;
+
+                #[luaclass]
+                struct Config {
+                    log_dir: LuaPathBuf,
+                }
+            }
+        };
+
+        let result = parse(&item_mod).unwrap();
+
+        assert_eq!(result.classes.len(), 1);
+        assert_eq!(result.type_map.len(), 1);
+        assert_eq!(
+            result.type_map.get("LuaPathBuf"),
+            Some(&"string".to_string())
+        );
     }
 }

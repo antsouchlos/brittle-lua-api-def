@@ -202,6 +202,75 @@ impl MethodAttrs {
     }
 }
 
+#[derive(Debug, Default)]
+pub struct NewtypeAttrs {
+    pub lua_type: Option<String>,
+}
+
+impl NewtypeAttrs {
+    pub fn parse(attrs: &[Attribute]) -> syn::Result<Self> {
+        let mut result = Self::default();
+
+        for attr in attrs {
+            if attr.path().is_ident("lua_newtype") && matches!(attr.meta, syn::Meta::List(_)) {
+                let meta: syn::Meta = attr.parse_args()?;
+                result.apply_meta(&meta, attr)?;
+            }
+        }
+
+        if result.lua_type.is_none() {
+            return Err(syn::Error::new(
+                proc_macro2::Span::call_site(),
+                "#[lua_newtype] requires a `to` argument, e.g. #[lua_newtype(to = \"string\")]",
+            ));
+        }
+
+        Ok(result)
+    }
+
+    fn apply_meta(&mut self, meta: &syn::Meta, attr: &Attribute) -> syn::Result<()> {
+        match meta {
+            syn::Meta::NameValue(nv) => {
+                let key = nv.path.get_ident().map(|i| i.to_string());
+
+                match key.as_deref() {
+                    Some("to") => {
+                        if self.lua_type.is_some() {
+                            return Err(syn::Error::new_spanned(attr, "duplicate `to`"));
+                        }
+
+                        let val = extract_string_lit(&nv.value).ok_or_else(|| {
+                            syn::Error::new_spanned(&nv.value, "expected string literal")
+                        })?;
+
+                        self.lua_type = Some(val);
+                    }
+                    _ => {
+                        return Err(syn::Error::new_spanned(
+                            attr,
+                            format!("unknown `#[lua_newtype({})]` key", key.unwrap_or_default()),
+                        ));
+                    }
+                }
+            }
+            syn::Meta::Path(p) => {
+                return Err(syn::Error::new_spanned(
+                    p,
+                    format!("unknown `#[lua_newtype({})]` key", quote_path(p)),
+                ));
+            }
+            syn::Meta::List(_) => {
+                return Err(syn::Error::new_spanned(
+                    attr,
+                    "unexpected `#[lua_newtype(...)]` form",
+                ));
+            }
+        }
+
+        Ok(())
+    }
+}
+
 fn extract_string_lit(expr: &syn::Expr) -> Option<String> {
     if let syn::Expr::Lit(lit) = expr {
         if let syn::Lit::Str(s) = &lit.lit {
@@ -272,4 +341,53 @@ fn is_lua_result_type(ty: &Type) -> bool {
     }
 
     false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use syn::parse_quote;
+
+    #[test]
+    fn test_newtype_to_string() {
+        let s: syn::ItemStruct = parse_quote! {
+            #[lua_newtype(to = "string")]
+            struct Foo;
+        };
+        let attrs = NewtypeAttrs::parse(&s.attrs).unwrap();
+        assert_eq!(attrs.lua_type.as_deref(), Some("string"));
+    }
+
+    #[test]
+    fn test_newtype_to_number() {
+        let s: syn::ItemStruct = parse_quote! {
+            #[lua_newtype(to = "number")]
+            struct Bar;
+        };
+        let attrs = NewtypeAttrs::parse(&s.attrs).unwrap();
+        assert_eq!(attrs.lua_type.as_deref(), Some("number"));
+    }
+
+    #[test]
+    fn test_newtype_missing_to_is_error() {
+        let s: syn::ItemStruct = parse_quote! {
+            #[lua_newtype]
+            struct Baz;
+        };
+        let result = NewtypeAttrs::parse(&s.attrs);
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("requires a `to` argument"));
+    }
+
+    #[test]
+    fn test_newtype_without_attribute_is_error() {
+        let s: syn::ItemStruct = parse_quote! {
+            struct Plain;
+        };
+        let result = NewtypeAttrs::parse(&s.attrs);
+        assert!(result.is_err());
+    }
 }

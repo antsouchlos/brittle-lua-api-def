@@ -63,6 +63,7 @@ mod tests {
     use super::*;
     use crate::ir::{ClassDef, FnDef};
     use proc_macro2::Span;
+    use std::collections::BTreeMap;
     use syn::parse_quote;
 
     #[test]
@@ -78,6 +79,7 @@ mod tests {
         let module = ModuleDef {
             classes: vec![class],
             functions: vec![],
+            type_map: BTreeMap::new(),
         };
         let crate_path: syn::Path = parse_quote! { test_crate };
         let tokens = generate(&module, &crate_path);
@@ -101,6 +103,7 @@ mod tests {
         let module = ModuleDef {
             classes: vec![],
             functions: vec![func],
+            type_map: BTreeMap::new(),
         };
         let crate_path: syn::Path = parse_quote! { test_crate };
         let tokens = generate(&module, &crate_path);

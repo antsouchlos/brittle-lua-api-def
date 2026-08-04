@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use proc_macro2::Span;
 use syn::{Ident, ReturnType, Type};
 
@@ -5,6 +7,7 @@ use syn::{Ident, ReturnType, Type};
 pub struct ModuleDef {
     pub classes: Vec<ClassDef>,
     pub functions: Vec<FnDef>,
+    pub type_map: BTreeMap<String, String>,
 }
 
 #[derive(Clone)]

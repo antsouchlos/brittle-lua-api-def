@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::Type;
@@ -6,13 +8,14 @@ use crate::ir::{ClassDef, FnDef, ModuleDef};
 
 pub fn generate(module: &ModuleDef) -> TokenStream {
     let mut parts: Vec<String> = Vec::new();
+    let type_map = &module.type_map;
 
     for class in &module.classes {
-        emit_class(&mut parts, class);
+        emit_class(&mut parts, class, type_map);
     }
 
     for func in &module.functions {
-        emit_free_function(&mut parts, func);
+        emit_free_function(&mut parts, func, type_map);
     }
 
     parts.push(String::new());
@@ -25,7 +28,7 @@ pub fn generate(module: &ModuleDef) -> TokenStream {
     }
 }
 
-fn emit_class(parts: &mut Vec<String>, class: &ClassDef) {
+fn emit_class(parts: &mut Vec<String>, class: &ClassDef, type_map: &BTreeMap<String, String>) {
     if let Some(ref doc) = class.doc {
         for line in doc.lines() {
             parts.push(format!("--- {}", line.trim()));
@@ -45,18 +48,23 @@ fn emit_class(parts: &mut Vec<String>, class: &ClassDef) {
             }
         }
 
-        let emmy_type = super::type_mapper::rust_type_to_emmylua(&field.ty);
+        let emmy_type = super::type_mapper::rust_type_to_emmylua(&field.ty, type_map);
         parts.push(format!("--- @field {} {}", field.lua_name, emmy_type));
     }
 
     for method in &class.methods {
-        emit_method(parts, method, &class.lua_name);
+        emit_method(parts, method, &class.lua_name, type_map);
     }
 
     parts.push(String::new());
 }
 
-fn emit_method(parts: &mut Vec<String>, method: &crate::ir::MethodDef, class_name: &str) {
+fn emit_method(
+    parts: &mut Vec<String>,
+    method: &crate::ir::MethodDef,
+    class_name: &str,
+    type_map: &BTreeMap<String, String>,
+) {
     if let Some(ref doc) = method.doc {
         for line in doc.lines() {
             parts.push(format!("--- {}", line.trim()));
@@ -71,7 +79,7 @@ fn emit_method(parts: &mut Vec<String>, method: &crate::ir::MethodDef, class_nam
                 ty.as_ref().clone()
             };
             let resolved = resolve_self(&inner, class_name);
-            let emmy = super::type_mapper::rust_type_to_emmylua(&resolved);
+            let emmy = super::type_mapper::rust_type_to_emmylua(&resolved, type_map);
             format!(" {}", emmy)
         }
         syn::ReturnType::Default => String::new(),
@@ -81,7 +89,7 @@ fn emit_method(parts: &mut Vec<String>, method: &crate::ir::MethodDef, class_nam
         .args
         .iter()
         .map(|(name, ty)| {
-            let emmy = super::type_mapper::rust_type_to_emmylua(ty);
+            let emmy = super::type_mapper::rust_type_to_emmylua(ty, type_map);
             format!("{}: {}", name, emmy)
         })
         .collect();
@@ -112,7 +120,7 @@ fn emit_method(parts: &mut Vec<String>, method: &crate::ir::MethodDef, class_nam
     parts.push(format!("--- @field {} {}", method.lua_name, fun_sig));
 }
 
-fn emit_free_function(parts: &mut Vec<String>, func: &FnDef) {
+fn emit_free_function(parts: &mut Vec<String>, func: &FnDef, type_map: &BTreeMap<String, String>) {
     if let Some(ref doc) = func.doc {
         for line in doc.lines() {
             parts.push(format!("--- {}", line.trim()));
@@ -120,7 +128,7 @@ fn emit_free_function(parts: &mut Vec<String>, func: &FnDef) {
     }
 
     for (name, ty) in &func.args {
-        let emmy = super::type_mapper::rust_type_to_emmylua(ty);
+        let emmy = super::type_mapper::rust_type_to_emmylua(ty, type_map);
         parts.push(format!("--- @param {} {}", name, emmy));
     }
 
@@ -132,7 +140,7 @@ fn emit_free_function(parts: &mut Vec<String>, func: &FnDef) {
                 ty.as_ref().clone()
             };
 
-            let emmy = super::type_mapper::rust_type_to_emmylua(&inner);
+            let emmy = super::type_mapper::rust_type_to_emmylua(&inner, type_map);
             format!("--- @return {}", emmy)
         }
         syn::ReturnType::Default => String::new(),
@@ -232,10 +240,16 @@ fn resolve_self_args(args: &syn::PathArguments, class_name: &str) -> syn::PathAr
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+
     use super::*;
     use crate::ir::{ClassDef, FieldDef, FnDef, MethodDef};
     use proc_macro2::Span;
     use syn::parse_quote;
+
+    fn empty_map() -> BTreeMap<String, String> {
+        BTreeMap::new()
+    }
 
     #[test]
     fn test_class_output() {
@@ -250,6 +264,7 @@ mod tests {
         let module = ModuleDef {
             classes: vec![class],
             functions: vec![],
+            type_map: empty_map(),
         };
         let tokens = generate(&module);
         let output = tokens.to_string();
@@ -278,6 +293,7 @@ mod tests {
         let module = ModuleDef {
             classes: vec![class],
             functions: vec![],
+            type_map: empty_map(),
         };
         let tokens = generate(&module);
         let output = tokens.to_string();
@@ -307,6 +323,7 @@ mod tests {
         let module = ModuleDef {
             classes: vec![class],
             functions: vec![],
+            type_map: empty_map(),
         };
         let tokens = generate(&module);
         let output = tokens.to_string();
@@ -319,6 +336,7 @@ mod tests {
         let module = ModuleDef {
             classes: vec![],
             functions: vec![],
+            type_map: empty_map(),
         };
         let tokens = generate(&module);
         let output = tokens.to_string();
@@ -351,6 +369,7 @@ mod tests {
         let module = ModuleDef {
             classes: vec![class],
             functions: vec![],
+            type_map: empty_map(),
         };
         let tokens = generate(&module);
         let output = tokens.to_string();
@@ -384,6 +403,7 @@ mod tests {
         let module = ModuleDef {
             classes: vec![class],
             functions: vec![],
+            type_map: empty_map(),
         };
         let tokens = generate(&module);
         let output = tokens.to_string();
@@ -420,6 +440,7 @@ mod tests {
         let module = ModuleDef {
             classes: vec![class],
             functions: vec![],
+            type_map: empty_map(),
         };
         let tokens = generate(&module);
         let output = tokens.to_string();
@@ -447,6 +468,7 @@ mod tests {
                 is_fallible: true,
                 span: Span::call_site(),
             }],
+            type_map: empty_map(),
         };
         let tokens = generate(&module);
         let output = tokens.to_string();
@@ -471,12 +493,90 @@ mod tests {
                 is_fallible: false,
                 span: Span::call_site(),
             }],
+            type_map: empty_map(),
         };
         let tokens = generate(&module);
         let output = tokens.to_string();
 
         assert!(
             output.contains("--- @return string"),
+            "expected `string` return, got: {}",
+            output
+        );
+    }
+
+    #[test]
+    fn test_newtype_field_uses_type_map() {
+        let mut type_map = BTreeMap::new();
+        type_map.insert("LuaPathBuf".to_string(), "string".to_string());
+
+        let class = ClassDef {
+            ident: parse_quote! { Config },
+            lua_name: "Config".to_string(),
+            doc: None,
+            fields: vec![FieldDef {
+                ident: parse_quote! { log_dir },
+                lua_name: "log_dir".to_string(),
+                ty: parse_quote! { LuaPathBuf },
+                doc: None,
+                default: None,
+                skip: false,
+                span: Span::call_site(),
+            }],
+            methods: vec![],
+            span: Span::call_site(),
+        };
+        let module = ModuleDef {
+            classes: vec![class],
+            functions: vec![],
+            type_map,
+        };
+        let tokens = generate(&module);
+        let output = tokens.to_string();
+
+        assert!(
+            output.contains("--- @field log_dir string"),
+            "expected `string` annotation, got: {}",
+            output
+        );
+        assert!(!output.contains("LuaPathBuf"));
+    }
+
+    #[test]
+    fn test_newtype_return_type_uses_type_map() {
+        let mut type_map = BTreeMap::new();
+        type_map.insert("LuaPathBuf".to_string(), "string".to_string());
+
+        let class = ClassDef {
+            ident: parse_quote! { Config },
+            lua_name: "Config".to_string(),
+            doc: None,
+            fields: vec![],
+            methods: vec![MethodDef {
+                ident: parse_quote! { get_log_dir },
+                lua_name: "get_log_dir".to_string(),
+                doc: None,
+                receiver: crate::ir::ReceiverKind::Ref,
+                args: vec![],
+                ret: syn::ReturnType::Type(
+                    parse_quote! { -> },
+                    Box::new(parse_quote! { LuaPathBuf }),
+                ),
+                is_fallible: false,
+                span: Span::call_site(),
+            }],
+            span: Span::call_site(),
+        };
+        let module = ModuleDef {
+            classes: vec![class],
+            functions: vec![],
+            type_map,
+        };
+        let tokens = generate(&module);
+        let output = tokens.to_string();
+
+        assert!(
+            output.contains("fun(self): string"),
             "expected `string` return, got: {}",
             output
         );

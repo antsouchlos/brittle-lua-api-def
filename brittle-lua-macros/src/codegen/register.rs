@@ -7,6 +7,7 @@ pub fn generate(module: &ModuleDef, crate_path: &syn::Path) -> TokenStream {
     let class_registrations: Vec<TokenStream> = module
         .classes
         .iter()
+        .filter(|class| !class.annotation_only)
         .map(|class| {
             let lua_name = &class.lua_name;
             let ident = &class.ident;
@@ -74,6 +75,7 @@ mod tests {
             doc: None,
             fields: vec![],
             methods: vec![],
+            annotation_only: false,
             span: Span::call_site(),
         };
         let module = ModuleDef {

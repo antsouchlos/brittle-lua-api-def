@@ -37,8 +37,10 @@ fn make_inside_items(
     inside.extend(original_items);
 
     for class in &module.classes {
-        inside.push(self::userdata::generate(class, crate_path));
-        inside.push(self::from_lua::generate(class, crate_path));
+        if !class.annotation_only {
+            inside.push(self::userdata::generate(class, crate_path));
+            inside.push(self::from_lua::generate(class, crate_path));
+        }
     }
 
     inside.push(self::register::generate(module, crate_path));

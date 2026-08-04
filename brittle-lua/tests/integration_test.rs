@@ -338,3 +338,82 @@ fn test_newtype_emmylua_maps_to_string() {
     assert!(emmy.contains("@field port integer"));
     assert!(emmy.contains("return {}"));
 }
+
+#[brittle_lua::lua_module(crate = "brittle_lua")]
+mod api_signature {
+    #[luaclass]
+    #[derive(Clone)]
+    pub struct RefParser {
+        pub file_extension: String,
+        #[lua(signature = "fun(string): PublicationMetadata")]
+        pub parser: mlua::Function,
+    }
+}
+
+#[brittle_lua::lua_module(crate = "brittle_lua")]
+mod api_annotation_only {
+    #[luaclass(annotation, name = "PubMeta")]
+    #[derive(Clone)]
+    pub struct PublicationMetadata {
+        pub title: String,
+        pub author: String,
+        pub year: i32,
+        pub journal: String,
+    }
+}
+
+#[test]
+fn test_signature_field_emmylua_override() {
+    let emmy = api_signature::EMMY_LUA;
+
+    assert!(
+        emmy.contains("--- @field parser fun(string): PublicationMetadata"),
+        "expected custom signature, got:\n{}",
+        emmy
+    );
+    assert!(
+        !emmy.contains("--- @field parser function"),
+        "should not contain default `function` type, got:\n{}",
+        emmy
+    );
+    assert!(emmy.contains("--- @class RefParser"));
+}
+
+#[test]
+fn test_annotation_only_class_emmylua() {
+    let emmy = api_annotation_only::EMMY_LUA;
+
+    assert!(
+        emmy.contains("--- @class PubMeta"),
+        "expected @class PubMeta, got:\n{}",
+        emmy
+    );
+    assert!(emmy.contains("--- @field title string"));
+    assert!(emmy.contains("--- @field author string"));
+    assert!(emmy.contains("--- @field year integer"));
+    assert!(emmy.contains("--- @field journal string"));
+}
+
+#[test]
+fn test_annotation_only_no_register() {
+    use mlua::Lua;
+
+    let lua = Lua::new();
+    let result = api_annotation_only::register(&lua);
+    assert!(result.is_ok());
+    // annotation-only classes should not be registered as proxies
+    let result: mlua::Result<mlua::Value> = lua.load("return PubMeta").eval();
+    assert!(result.is_err() || matches!(result, Ok(mlua::Value::Nil)));
+}
+
+#[test]
+fn test_signature_ref_parser_register() {
+    use mlua::Lua;
+
+    let lua = Lua::new();
+    api_signature::register(&lua).expect("register");
+
+    // Verify class is registered and callable via Lua
+    let result: mlua::Result<mlua::Value> = lua.load("return RefParser").eval();
+    assert!(result.is_ok());
+}

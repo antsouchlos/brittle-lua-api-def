@@ -112,6 +112,7 @@ fn parse_class(s: &syn::ItemStruct) -> syn::Result<ClassDef> {
             ty: field.ty.clone(),
             doc: field_doc,
             default: field_attrs.default,
+            signature: field_attrs.signature,
             skip: field_attrs.skip,
             span: field_ident.span(),
         });
@@ -123,6 +124,7 @@ fn parse_class(s: &syn::ItemStruct) -> syn::Result<ClassDef> {
         doc,
         fields,
         methods: Vec::new(),
+        annotation_only: class_attrs.annotation_only,
         span: s.ident.span(),
     })
 }

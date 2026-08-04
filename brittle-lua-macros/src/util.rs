@@ -4,6 +4,7 @@ use syn::{Attribute, Type};
 pub struct FieldAttrs {
     pub default: Option<String>,
     pub rename: Option<String>,
+    pub signature: Option<String>,
     pub skip: bool,
 }
 
@@ -63,6 +64,17 @@ impl FieldAttrs {
 
                         self.rename = Some(val);
                     }
+                    Some("signature") => {
+                        if self.signature.is_some() {
+                            return Err(syn::Error::new_spanned(attr, "duplicate `signature`"));
+                        }
+
+                        let val = extract_string_lit(&nv.value).ok_or_else(|| {
+                            syn::Error::new_spanned(&nv.value, "expected string literal")
+                        })?;
+
+                        self.signature = Some(val);
+                    }
                     _ => {
                         return Err(syn::Error::new_spanned(
                             attr,
@@ -86,6 +98,7 @@ impl FieldAttrs {
 #[derive(Debug, Default)]
 pub struct ClassAttrs {
     pub name: Option<String>,
+    pub annotation_only: bool,
 }
 
 impl ClassAttrs {
@@ -94,8 +107,11 @@ impl ClassAttrs {
 
         for attr in attrs {
             if attr.path().is_ident("luaclass") && matches!(attr.meta, syn::Meta::List(_)) {
-                let meta: syn::Meta = attr.parse_args()?;
-                class_attrs.apply_meta(&meta, attr)?;
+                let nested: syn::punctuated::Punctuated<syn::Meta, syn::Token![,]> =
+                    attr.parse_args_with(syn::punctuated::Punctuated::parse_terminated)?;
+                for meta in nested {
+                    class_attrs.apply_meta(&meta, attr)?;
+                }
             }
         }
 
@@ -128,10 +144,18 @@ impl ClassAttrs {
                 }
             }
             syn::Meta::Path(p) => {
-                return Err(syn::Error::new_spanned(
-                    p,
-                    format!("unknown `#[luaclass({})]` key", quote_path(p)),
-                ));
+                if p.is_ident("annotation") {
+                    if self.annotation_only {
+                        return Err(syn::Error::new_spanned(attr, "duplicate `annotation`"));
+                    }
+
+                    self.annotation_only = true;
+                } else {
+                    return Err(syn::Error::new_spanned(
+                        p,
+                        format!("unknown `#[luaclass({})]` key", quote_path(p)),
+                    ));
+                }
             }
             syn::Meta::List(_) => {}
         }
@@ -389,5 +413,67 @@ mod tests {
         };
         let result = NewtypeAttrs::parse(&s.attrs);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_field_signature_parsing() {
+        let s: syn::ItemStruct = parse_quote! {
+            struct Foo {
+                #[lua(signature = "fun(string): Bar")]
+                pub parser: Function,
+            }
+        };
+        let field = s.fields.iter().next().unwrap();
+        let attrs = FieldAttrs::parse(&field.attrs).unwrap();
+        assert_eq!(attrs.signature.as_deref(), Some("fun(string): Bar"));
+    }
+
+    #[test]
+    fn test_field_signature_duplicate_is_error() {
+        let s: syn::ItemStruct = parse_quote! {
+            struct Foo {
+                #[lua(signature = "a")]
+                #[lua(signature = "b")]
+                pub parser: Function,
+            }
+        };
+        let field = s.fields.iter().next().unwrap();
+        let result = FieldAttrs::parse(&field.attrs);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("duplicate"));
+    }
+
+    #[test]
+    fn test_luaclass_annotation_parsing() {
+        let s: syn::ItemStruct = parse_quote! {
+            #[luaclass(annotation)]
+            struct Metadata {
+                pub title: String,
+            }
+        };
+        let attrs = ClassAttrs::parse(&s.attrs).unwrap();
+        assert!(attrs.annotation_only);
+    }
+
+    #[test]
+    fn test_luaclass_annotation_duplicate_is_error() {
+        let s: syn::ItemStruct = parse_quote! {
+            #[luaclass(annotation, annotation)]
+            struct Metadata;
+        };
+        let result = ClassAttrs::parse(&s.attrs);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("duplicate"));
+    }
+
+    #[test]
+    fn test_luaclass_annotation_with_name() {
+        let s: syn::ItemStruct = parse_quote! {
+            #[luaclass(annotation, name = "Meta")]
+            struct Metadata;
+        };
+        let attrs = ClassAttrs::parse(&s.attrs).unwrap();
+        assert!(attrs.annotation_only);
+        assert_eq!(attrs.name.as_deref(), Some("Meta"));
     }
 }

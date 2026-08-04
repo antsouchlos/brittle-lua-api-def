@@ -38,7 +38,11 @@ pub fn validate(module: &ModuleDef) -> Result<(), Vec<Diagnostic>> {
         }
 
         for field in &class.fields {
-            if field.skip && field.default.is_none() && !is_option_type(&field.ty) {
+            if !class.annotation_only
+                && field.skip
+                && field.default.is_none()
+                && !is_option_type(&field.ty)
+            {
                 diagnostics.push(Diagnostic {
                     message: format!(
                         "skipped field '{}' has no default — add #[lua(default = \"...\")] or make it Option<T>",
@@ -51,6 +55,16 @@ pub fn validate(module: &ModuleDef) -> Result<(), Vec<Diagnostic>> {
             if field.skip && field.default.is_some() && is_option_type(&field.ty) {
                 // Valid: has default or Option
             }
+        }
+
+        if class.annotation_only && !class.methods.is_empty() {
+            diagnostics.push(Diagnostic {
+                message: format!(
+                    "annotation-only class '{}' cannot have methods",
+                    class.ident
+                ),
+                span: class.span,
+            });
         }
 
         for method in &class.methods {
@@ -130,6 +144,7 @@ mod tests {
             doc: None,
             fields: vec![],
             methods: vec![],
+            annotation_only: false,
             span: call_site(),
         };
         let class_b = ClassDef {
@@ -138,6 +153,7 @@ mod tests {
             doc: None,
             fields: vec![],
             methods: vec![],
+            annotation_only: false,
             span: call_site(),
         };
         let module = ModuleDef {
@@ -182,6 +198,7 @@ mod tests {
             doc: None,
             fields: vec![],
             methods: vec![method_a, method_b],
+            annotation_only: false,
             span: call_site(),
         };
         let module = ModuleDef {
@@ -240,6 +257,7 @@ mod tests {
             ty: parse_quote! { i32 },
             doc: None,
             default: None,
+            signature: None,
             skip: true,
             span: call_site(),
         };
@@ -249,6 +267,7 @@ mod tests {
             doc: None,
             fields: vec![field],
             methods: vec![],
+            annotation_only: false,
             span: call_site(),
         };
         let module = ModuleDef {
@@ -273,6 +292,7 @@ mod tests {
             ty: parse_quote! { Option<String> },
             doc: None,
             default: None,
+            signature: None,
             skip: true,
             span: call_site(),
         };
@@ -282,6 +302,7 @@ mod tests {
             doc: None,
             fields: vec![field],
             methods: vec![],
+            annotation_only: false,
             span: call_site(),
         };
         let module = ModuleDef {
@@ -301,6 +322,7 @@ mod tests {
             ty: parse_quote! { i32 },
             doc: None,
             default: Some("0".into()),
+            signature: None,
             skip: true,
             span: call_site(),
         };
@@ -310,6 +332,7 @@ mod tests {
             doc: None,
             fields: vec![field],
             methods: vec![],
+            annotation_only: false,
             span: call_site(),
         };
         let module = ModuleDef {
@@ -339,6 +362,7 @@ mod tests {
             doc: None,
             fields: vec![],
             methods: vec![method],
+            annotation_only: false,
             span: call_site(),
         };
         let module = ModuleDef {
@@ -363,6 +387,7 @@ mod tests {
             ty: parse_quote! { String },
             doc: None,
             default: None,
+            signature: None,
             skip: false,
             span: call_site(),
         };
@@ -382,6 +407,7 @@ mod tests {
             doc: None,
             fields: vec![field],
             methods: vec![method],
+            annotation_only: false,
             span: call_site(),
         };
         let func = FnDef {
@@ -410,6 +436,7 @@ mod tests {
             doc: None,
             fields: vec![],
             methods: vec![],
+            annotation_only: false,
             span: call_site(),
         };
         let class_b = ClassDef {
@@ -418,6 +445,7 @@ mod tests {
             doc: None,
             fields: vec![],
             methods: vec![],
+            annotation_only: false,
             span: call_site(),
         };
 
@@ -448,6 +476,7 @@ mod tests {
             ty: parse_quote! { i32 },
             doc: None,
             default: None,
+            signature: None,
             skip: true,
             span: call_site(),
         };
@@ -458,6 +487,7 @@ mod tests {
             doc: None,
             fields: vec![skipped_field],
             methods: vec![method_a, method_b],
+            annotation_only: false,
             span: call_site(),
         };
 
@@ -470,5 +500,68 @@ mod tests {
         assert!(result.is_err());
         let diags = result.unwrap_err();
         assert_eq!(diags.len(), 3);
+    }
+
+    #[test]
+    fn test_annotation_only_class_cannot_have_methods() {
+        let method = MethodDef {
+            ident: parse_quote! { do_thing },
+            lua_name: "do_thing".into(),
+            doc: None,
+            receiver: ReceiverKind::None,
+            args: vec![],
+            ret: syn::ReturnType::Default,
+            is_fallible: false,
+            span: call_site(),
+        };
+        let class = ClassDef {
+            ident: parse_quote! { Meta },
+            lua_name: "Meta".into(),
+            doc: None,
+            fields: vec![],
+            methods: vec![method],
+            annotation_only: true,
+            span: call_site(),
+        };
+        let module = ModuleDef {
+            classes: vec![class],
+            functions: vec![],
+            type_map: BTreeMap::new(),
+        };
+        let result = validate(&module);
+        assert!(result.is_err());
+        let diags = result.unwrap_err();
+        assert_eq!(diags.len(), 1);
+        assert!(diags[0].message.contains("cannot have methods"));
+    }
+
+    #[test]
+    fn test_annotation_only_skips_skipped_field_validation() {
+        let field = FieldDef {
+            ident: parse_quote! { secret },
+            lua_name: "secret".into(),
+            ty: parse_quote! { i32 },
+            doc: None,
+            default: None,
+            signature: None,
+            skip: true,
+            span: call_site(),
+        };
+        let class = ClassDef {
+            ident: parse_quote! { Meta },
+            lua_name: "Meta".into(),
+            doc: None,
+            fields: vec![field],
+            methods: vec![],
+            annotation_only: true,
+            span: call_site(),
+        };
+        let module = ModuleDef {
+            classes: vec![class],
+            functions: vec![],
+            type_map: BTreeMap::new(),
+        };
+        let result = validate(&module);
+        assert!(result.is_ok());
     }
 }

@@ -48,7 +48,11 @@ fn emit_class(parts: &mut Vec<String>, class: &ClassDef, type_map: &BTreeMap<Str
             }
         }
 
-        let emmy_type = super::type_mapper::rust_type_to_emmylua(&field.ty, type_map);
+        let emmy_type = if let Some(ref sig) = field.signature {
+            sig.clone()
+        } else {
+            super::type_mapper::rust_type_to_emmylua(&field.ty, type_map)
+        };
         parts.push(format!("--- @field {} {}", field.lua_name, emmy_type));
     }
 
@@ -259,6 +263,7 @@ mod tests {
             doc: None,
             fields: vec![],
             methods: vec![],
+            annotation_only: false,
             span: Span::call_site(),
         };
         let module = ModuleDef {
@@ -284,10 +289,12 @@ mod tests {
                 ty: parse_quote! { u16 },
                 doc: None,
                 default: None,
+                signature: None,
                 skip: false,
                 span: Span::call_site(),
             }],
             methods: vec![],
+            annotation_only: false,
             span: Span::call_site(),
         };
         let module = ModuleDef {
@@ -318,6 +325,7 @@ mod tests {
                 is_fallible: false,
                 span: Span::call_site(),
             }],
+            annotation_only: false,
             span: Span::call_site(),
         };
         let module = ModuleDef {
@@ -364,6 +372,7 @@ mod tests {
                 is_fallible: true,
                 span: Span::call_site(),
             }],
+            annotation_only: false,
             span: Span::call_site(),
         };
         let module = ModuleDef {
@@ -398,6 +407,7 @@ mod tests {
                 is_fallible: false,
                 span: Span::call_site(),
             }],
+            annotation_only: false,
             span: Span::call_site(),
         };
         let module = ModuleDef {
@@ -435,6 +445,7 @@ mod tests {
                 is_fallible: true,
                 span: Span::call_site(),
             }],
+            annotation_only: false,
             span: Span::call_site(),
         };
         let module = ModuleDef {
@@ -520,10 +531,12 @@ mod tests {
                 ty: parse_quote! { LuaPathBuf },
                 doc: None,
                 default: None,
+                signature: None,
                 skip: false,
                 span: Span::call_site(),
             }],
             methods: vec![],
+            annotation_only: false,
             span: Span::call_site(),
         };
         let module = ModuleDef {
@@ -565,6 +578,7 @@ mod tests {
                 is_fallible: false,
                 span: Span::call_site(),
             }],
+            annotation_only: false,
             span: Span::call_site(),
         };
         let module = ModuleDef {
@@ -580,5 +594,90 @@ mod tests {
             "expected `string` return, got: {}",
             output
         );
+    }
+
+    #[test]
+    fn test_signature_overrides_field_type() {
+        let class = ClassDef {
+            ident: parse_quote! { RefParser },
+            lua_name: "RefParser".to_string(),
+            doc: None,
+            fields: vec![FieldDef {
+                ident: parse_quote! { parser },
+                lua_name: "parser".to_string(),
+                ty: parse_quote! { mlua::Function },
+                doc: None,
+                default: None,
+                signature: Some("fun(string): PublicationMetadata".to_string()),
+                skip: false,
+                span: Span::call_site(),
+            }],
+            methods: vec![],
+            annotation_only: false,
+            span: Span::call_site(),
+        };
+        let module = ModuleDef {
+            classes: vec![class],
+            functions: vec![],
+            type_map: empty_map(),
+        };
+        let tokens = generate(&module);
+        let output = tokens.to_string();
+
+        assert!(
+            output.contains("--- @field parser fun(string): PublicationMetadata"),
+            "expected custom signature, got: {}",
+            output
+        );
+        assert!(
+            !output.contains("--- @field parser function"),
+            "should NOT contain the default `function` type, got: {}",
+            output
+        );
+    }
+
+    #[test]
+    fn test_annotation_only_class_emits_emmy_lua() {
+        let class = ClassDef {
+            ident: parse_quote! { PublicationMetadata },
+            lua_name: "PublicationMetadata".to_string(),
+            doc: None,
+            fields: vec![
+                FieldDef {
+                    ident: parse_quote! { title },
+                    lua_name: "title".to_string(),
+                    ty: parse_quote! { String },
+                    doc: None,
+                    default: None,
+                    signature: None,
+                    skip: false,
+                    span: Span::call_site(),
+                },
+                FieldDef {
+                    ident: parse_quote! { year },
+                    lua_name: "year".to_string(),
+                    ty: parse_quote! { i32 },
+                    doc: None,
+                    default: None,
+                    signature: None,
+                    skip: false,
+                    span: Span::call_site(),
+                },
+            ],
+            methods: vec![],
+            annotation_only: true,
+            span: Span::call_site(),
+        };
+        let module = ModuleDef {
+            classes: vec![class],
+            functions: vec![],
+            type_map: empty_map(),
+        };
+        let tokens = generate(&module);
+        let output = tokens.to_string();
+
+        assert!(output.contains("--- @class PublicationMetadata"));
+        assert!(output.contains("--- @field title string"));
+        assert!(output.contains("--- @field year integer"));
     }
 }

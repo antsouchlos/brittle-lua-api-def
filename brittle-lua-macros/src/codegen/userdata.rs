@@ -173,10 +173,12 @@ mod tests {
                 ty: parse_quote! { String },
                 doc: None,
                 default: None,
+                signature: None,
                 skip: false,
                 span: Span::call_site(),
             }],
             methods: vec![],
+            annotation_only: false,
             span: Span::call_site(),
         };
         let crate_path: syn::Path = parse_quote! { test_crate };
@@ -204,6 +206,7 @@ mod tests {
                 is_fallible: false,
                 span: Span::call_site(),
             }],
+            annotation_only: false,
             span: Span::call_site(),
         };
         let crate_path: syn::Path = parse_quote! { test_crate };
@@ -225,10 +228,12 @@ mod tests {
                 ty: parse_quote! { String },
                 doc: None,
                 default: None,
+                signature: None,
                 skip: true,
                 span: Span::call_site(),
             }],
             methods: vec![],
+            annotation_only: false,
             span: Span::call_site(),
         };
         let crate_path: syn::Path = parse_quote! { test_crate };
@@ -255,6 +260,7 @@ mod tests {
                 is_fallible: true,
                 span: Span::call_site(),
             }],
+            annotation_only: false,
             span: Span::call_site(),
         };
         let crate_path: syn::Path = parse_quote! { test_crate };

@@ -17,6 +17,7 @@ pub struct ClassDef {
     pub doc: Option<String>,
     pub fields: Vec<FieldDef>,
     pub methods: Vec<MethodDef>,
+    pub annotation_only: bool,
     pub span: Span,
 }
 
@@ -27,6 +28,7 @@ pub struct FieldDef {
     pub ty: Type,
     pub doc: Option<String>,
     pub default: Option<String>,
+    pub signature: Option<String>,
     pub skip: bool,
     pub span: Span,
 }

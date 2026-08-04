@@ -96,10 +96,12 @@ mod tests {
                 ty: parse_quote! { String },
                 doc: None,
                 default: None,
+                signature: None,
                 skip: false,
                 span: Span::call_site(),
             }],
             methods: vec![],
+            annotation_only: false,
             span: Span::call_site(),
         };
         let crate_path: syn::Path = parse_quote! { test_crate };
@@ -122,10 +124,12 @@ mod tests {
                 ty: parse_quote! { i32 },
                 doc: None,
                 default: Some("42".to_string()),
+                signature: None,
                 skip: true,
                 span: Span::call_site(),
             }],
             methods: vec![],
+            annotation_only: false,
             span: Span::call_site(),
         };
         let crate_path: syn::Path = parse_quote! { test_crate };
@@ -144,6 +148,7 @@ mod tests {
             doc: None,
             fields: vec![],
             methods: vec![],
+            annotation_only: false,
             span: Span::call_site(),
         };
         let crate_path: syn::Path = parse_quote! { test_crate };

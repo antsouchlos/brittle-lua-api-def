@@ -15,10 +15,10 @@ pub fn generate(class: &ClassDef, crate_path: &syn::Path) -> TokenStream {
             let field_ident = &field.ident;
 
             quote! {
-                __fields.add_field_method_get(#lua_name, |__, this| {
+                __fields.add_field_method_get(#lua_name, |__lua, this| {
                     Ok(this.#field_ident.clone())
                 });
-                __fields.add_field_method_set(#lua_name, |__, this, __v| {
+                __fields.add_field_method_set(#lua_name, |__lua, this, __v| {
                     this.#field_ident = __v;
                     Ok(())
                 });

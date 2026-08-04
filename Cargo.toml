@@ -7,7 +7,7 @@ members = [
 ]
 
 [workspace.dependencies]
-mlua = { version = "0.10", features = ["luau", "serialize"] }
+mlua = { version = "0.12", features = ["luau", "serde"] }
 syn = { version = "2", features = ["full"] }
 quote = "1"
 proc-macro2 = "1"

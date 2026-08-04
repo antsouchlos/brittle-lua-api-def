@@ -1,6 +1,12 @@
 /// Stores Lua callback functions in a Rust `Vec<mlua::Function>` and
 /// dynamically registers new callbacks from Lua via `register_callback()`.
-use mlua::Lua;
+///
+/// With mlua's `send` feature enabled, `CallbackRegistry` is `Send + Sync`
+/// and can be shared across threads.
+use std::sync::Arc;
+use std::thread;
+
+use mlua::{Lua, ObjectLike};
 
 #[brittle_lua::lua_module(crate = "brittle_lua")]
 mod callbacks {
@@ -37,13 +43,19 @@ mod callbacks {
     }
 }
 
+/// Compile-time proof that the generated struct satisfies `Send + Sync`.
+fn assert_send_sync<T: Send + Sync>(_: &T) {}
+
 fn main() -> mlua::Result<()> {
-    let lua = Lua::new();
+    let placeholder = callbacks::CallbackRegistry::new();
+    assert_send_sync(&placeholder);
+
+    let lua = Arc::new(Lua::new());
     callbacks::register(&lua)?;
 
     lua.load(
         r#"
-        local registry = CallbackRegistry.new()
+        registry = CallbackRegistry.new()
 
         registry:register_callback(function(msg)
             print("[LOG]    " .. msg)
@@ -63,6 +75,21 @@ fn main() -> mlua::Result<()> {
         "#,
     )
     .exec()?;
+
+    let lua2 = Arc::clone(&lua);
+
+    let handle = thread::spawn(move || -> mlua::Result<()> {
+        let globals = lua2.globals();
+        let registry: mlua::AnyUserData = globals.get("registry")?;
+        let count: usize = registry.call_method("count", ())?;
+        println!(
+            "Callback count accessed from thread: {} (struct is Send + Sync)",
+            count
+        );
+        Ok(())
+    });
+
+    handle.join().unwrap()?;
 
     Ok(())
 }

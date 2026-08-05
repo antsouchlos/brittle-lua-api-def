@@ -26,7 +26,7 @@ mod api {
     #[derive(Clone)]
     pub struct RefParser {
         pub file_extension: String,
-        #[lua(signature = "fun(string): PublicationMetadata")]
+        #[lua(signature = "fun(src :string): PublicationMetadata")]
         pub parser: mlua::Function,
     }
 }

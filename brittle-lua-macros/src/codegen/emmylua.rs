@@ -48,12 +48,21 @@ fn emit_class(parts: &mut Vec<String>, class: &ClassDef, type_map: &BTreeMap<Str
             }
         }
 
+        let optional_suffix = if field.default.is_some() && !is_option_type(&field.ty) {
+            "?"
+        } else {
+            ""
+        };
+
         let emmy_type = if let Some(ref sig) = field.signature {
             sig.clone()
         } else {
             super::type_mapper::rust_type_to_emmylua(&field.ty, type_map)
         };
-        parts.push(format!("--- @field {} {}", field.lua_name, emmy_type));
+        parts.push(format!(
+            "--- @field {}{} {}",
+            field.lua_name, optional_suffix, emmy_type
+        ));
     }
 
     for method in &class.methods {
@@ -240,6 +249,16 @@ fn resolve_self_args(args: &syn::PathArguments, class_name: &str) -> syn::PathAr
         }
         other => other.clone(),
     }
+}
+
+fn is_option_type(ty: &Type) -> bool {
+    if let Type::Path(tp) = ty {
+        if let Some(seg) = tp.path.segments.last() {
+            return seg.ident == "Option";
+        }
+    }
+
+    false
 }
 
 #[cfg(test)]
@@ -679,5 +698,62 @@ mod tests {
         assert!(output.contains("--- @class PublicationMetadata"));
         assert!(output.contains("--- @field title string"));
         assert!(output.contains("--- @field year integer"));
+    }
+
+    #[test]
+    fn test_optional_field_emits_question_mark() {
+        let class = ClassDef {
+            ident: parse_quote! { Config },
+            lua_name: "Config".to_string(),
+            doc: None,
+            fields: vec![
+                FieldDef {
+                    ident: parse_quote! { host },
+                    lua_name: "host".to_string(),
+                    ty: parse_quote! { String },
+                    doc: None,
+                    default: None,
+                    signature: None,
+                    skip: false,
+                    span: Span::call_site(),
+                },
+                FieldDef {
+                    ident: parse_quote! { port },
+                    lua_name: "port".to_string(),
+                    ty: parse_quote! { u16 },
+                    doc: None,
+                    default: Some("3000".to_string()),
+                    signature: None,
+                    skip: false,
+                    span: Span::call_site(),
+                },
+            ],
+            methods: vec![],
+            annotation_only: false,
+            span: Span::call_site(),
+        };
+        let module = ModuleDef {
+            classes: vec![class],
+            functions: vec![],
+            type_map: empty_map(),
+        };
+        let tokens = generate(&module);
+        let output = tokens.to_string();
+
+        assert!(
+            output.contains("--- @field port? integer"),
+            "optional field should have `?` suffix, got: {}",
+            output
+        );
+        assert!(
+            output.contains("--- @field host string"),
+            "required field should NOT have `?` suffix, got: {}",
+            output
+        );
+        assert!(
+            !output.contains("--- @field host? string"),
+            "required field should NOT have `?`, got: {}",
+            output
+        );
     }
 }

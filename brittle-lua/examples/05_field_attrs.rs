@@ -9,6 +9,9 @@ mod config {
         #[lua(rename = "server_port")]
         pub port: u16,
 
+        #[lua(default = r#""MyServer".to_string()"#)]
+        pub name: String,
+
         /// Not exposed to Lua. Gets the default value from Rust.
         #[lua(skip)]
         #[lua(default = r#""generated-default".into()"#)]
@@ -34,6 +37,10 @@ fn main() -> mlua::Result<()> {
     println!(
         "port:        {}   (from Lua key `server_port`)",
         server.port
+    );
+    println!(
+        "name:        {}   (not provided field, generated in Rust from default)",
+        server.name
     );
     println!(
         "instance_id: {:?}   (skipped field, generated in Rust from default)",

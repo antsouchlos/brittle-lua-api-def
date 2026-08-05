@@ -32,19 +32,41 @@ pub fn generate(class: &ClassDef, crate_path: &syn::Path) -> TokenStream {
             let field_name_literal = field_name_str.clone();
             let struct_name = lua_name.clone();
 
-            quote! {
-                #field_ident: {
-                    if !__table.contains_key(#lua_field_name)? {
-                        return Err(#crate_path::field_missing(#struct_name, #field_name_literal));
-                    }
-                    let __raw: #crate_path::mlua::Value = __table.get(#lua_field_name)?;
-                    #crate_path::mlua::FromLua::from_lua(__raw, __lua)
-                        .map_err(|e| #crate_path::field_type_mismatch(
-                            #struct_name,
-                            #field_name_literal,
-                            e.to_string(),
-                        ))?
-                },
+            if field.default.is_some() {
+                let default = field.default.as_ref().unwrap();
+                let default_expr: syn::Expr =
+                    syn::parse_str(default).expect("invalid default expression");
+
+                quote! {
+                    #field_ident: {
+                        if !__table.contains_key(#lua_field_name)? {
+                            #default_expr
+                        } else {
+                            let __raw: #crate_path::mlua::Value = __table.get(#lua_field_name)?;
+                            #crate_path::mlua::FromLua::from_lua(__raw, __lua)
+                                .map_err(|e| #crate_path::field_type_mismatch(
+                                    #struct_name,
+                                    #field_name_literal,
+                                    e.to_string(),
+                                ))?
+                        }
+                    },
+                }
+            } else {
+                quote! {
+                    #field_ident: {
+                        if !__table.contains_key(#lua_field_name)? {
+                            return Err(#crate_path::field_missing(#struct_name, #field_name_literal));
+                        }
+                        let __raw: #crate_path::mlua::Value = __table.get(#lua_field_name)?;
+                        #crate_path::mlua::FromLua::from_lua(__raw, __lua)
+                            .map_err(|e| #crate_path::field_type_mismatch(
+                                #struct_name,
+                                #field_name_literal,
+                                e.to_string(),
+                            ))?
+                    },
+                }
             }
         })
         .collect();
@@ -138,6 +160,41 @@ mod tests {
 
         assert!(!output.contains("contains_key"));
         assert!(output.contains("42"));
+    }
+
+    #[test]
+    fn test_optional_field_with_default() {
+        let class = ClassDef {
+            ident: parse_quote! { Config },
+            lua_name: "Config".to_string(),
+            doc: None,
+            fields: vec![FieldDef {
+                ident: parse_quote! { port },
+                lua_name: "port".to_string(),
+                ty: parse_quote! { u16 },
+                doc: None,
+                default: Some("8080".to_string()),
+                signature: None,
+                skip: false,
+                span: Span::call_site(),
+            }],
+            methods: vec![],
+            annotation_only: false,
+            span: Span::call_site(),
+        };
+        let crate_path: syn::Path = parse_quote! { test_crate };
+        let tokens = generate(&class, &crate_path);
+        let output = tokens.to_string();
+
+        assert!(
+            output.contains("contains_key"),
+            "should check if key exists for optional field"
+        );
+        assert!(output.contains("8080"), "should include default value");
+        assert!(
+            !output.contains("field_missing"),
+            "should NOT use field_missing for optional field with default"
+        );
     }
 
     #[test]

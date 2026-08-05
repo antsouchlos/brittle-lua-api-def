@@ -17,8 +17,16 @@ pub fn generate(class: &ClassDef, crate_path: &syn::Path) -> TokenStream {
 
             if field.skip {
                 let default_expr = if let Some(ref default) = field.default {
-                    let expr: syn::Expr =
-                        syn::parse_str(default).expect("invalid default expression");
+                    let expr: syn::Expr = match syn::parse_str(default) {
+                        Ok(e) => e,
+                        Err(e) => {
+                            return syn::Error::new(
+                                field.span,
+                                format!("invalid default expression: {}", e),
+                            )
+                            .to_compile_error();
+                        }
+                    };
                     quote! { #expr }
                 } else {
                     quote! { Default::default() }
@@ -32,10 +40,17 @@ pub fn generate(class: &ClassDef, crate_path: &syn::Path) -> TokenStream {
             let field_name_literal = field_name_str.clone();
             let struct_name = lua_name.clone();
 
-            if field.default.is_some() {
-                let default = field.default.as_ref().unwrap();
-                let default_expr: syn::Expr =
-                    syn::parse_str(default).expect("invalid default expression");
+            if let Some(default) = &field.default {
+                let default_expr: syn::Expr = match syn::parse_str(default) {
+                    Ok(e) => e,
+                    Err(e) => {
+                        return syn::Error::new(
+                            field.span,
+                            format!("invalid default expression: {}", e),
+                        )
+                        .to_compile_error();
+                    }
+                };
 
                 quote! {
                     #field_ident: {
@@ -100,6 +115,7 @@ pub fn generate(class: &ClassDef, crate_path: &syn::Path) -> TokenStream {
 }
 
 #[cfg(test)]
+
 mod tests {
     use super::*;
     use crate::ir::FieldDef;
@@ -115,7 +131,7 @@ mod tests {
             fields: vec![FieldDef {
                 ident: parse_quote! { x },
                 lua_name: "x".to_string(),
-                ty: parse_quote! { String },
+                field_type: parse_quote! { String },
                 doc: None,
                 default: None,
                 signature: None,
@@ -143,7 +159,7 @@ mod tests {
             fields: vec![FieldDef {
                 ident: parse_quote! { bar },
                 lua_name: "bar".to_string(),
-                ty: parse_quote! { i32 },
+                field_type: parse_quote! { i32 },
                 doc: None,
                 default: Some("42".to_string()),
                 signature: None,
@@ -171,7 +187,7 @@ mod tests {
             fields: vec![FieldDef {
                 ident: parse_quote! { port },
                 lua_name: "port".to_string(),
-                ty: parse_quote! { u16 },
+                field_type: parse_quote! { u16 },
                 doc: None,
                 default: Some("8080".to_string()),
                 signature: None,

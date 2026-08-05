@@ -26,30 +26,35 @@ pub fn parse(item_mod: &syn::ItemMod) -> syn::Result<ModuleDef> {
 
     for item in items {
         match item {
-            syn::Item::Struct(s) => {
-                if has_attr(&s.attrs, "luaclass") {
-                    let class = parse_class(s)?;
+            syn::Item::Struct(item_struct) => {
+                if has_attr(&item_struct.attrs, "luaclass") {
+                    let class = parse_class(item_struct)?;
                     classes.push(class);
                 }
 
-                if has_attr(&s.attrs, "lua_newtype") {
-                    let newtype = NewtypeAttrs::parse(&s.attrs)?;
-                    let rust_name = s.ident.to_string();
-                    let lua_type = newtype.lua_type.expect("lua_newtype must have lua_type");
+                if has_attr(&item_struct.attrs, "lua_newtype") {
+                    let newtype = NewtypeAttrs::parse(&item_struct.attrs)?;
+                    let rust_name = item_struct.ident.to_string();
+                    let lua_type = newtype.lua_type.ok_or_else(|| {
+                        syn::Error::new(
+                            item_struct.ident.span(),
+                            "#[lua_newtype] requires a `to` argument",
+                        )
+                    })?;
 
                     type_map.insert(rust_name, lua_type);
                 }
             }
-            syn::Item::Impl(imp) => {
-                if has_attr(&imp.attrs, "luamethods") {
-                    let (struct_ident, methods) = parse_methods_impl(imp)?;
+            syn::Item::Impl(item_impl) => {
+                if has_attr(&item_impl.attrs, "luamethods") {
+                    let (struct_ident, methods) = parse_methods_impl(item_impl)?;
                     let key = struct_ident.to_string();
                     methods_map.entry(key).or_default().extend(methods);
                 }
             }
-            syn::Item::Fn(f) => {
-                if has_attr(&f.attrs, "luafunction") {
-                    let func = parse_function(f)?;
+            syn::Item::Fn(item_fn) => {
+                if has_attr(&item_fn.attrs, "luafunction") {
+                    let func = parse_function(item_fn)?;
                     functions.push(func);
                 }
             }
@@ -78,14 +83,16 @@ fn has_attr(attrs: &[syn::Attribute], name: &str) -> bool {
     attrs.iter().any(|a| a.path().is_ident(name))
 }
 
-fn parse_class(s: &syn::ItemStruct) -> syn::Result<ClassDef> {
-    let class_attrs = ClassAttrs::parse(&s.attrs)?;
-    let lua_name = class_attrs.name.unwrap_or_else(|| s.ident.to_string());
-    let doc = extract_doc(&s.attrs);
+fn parse_class(item_struct: &syn::ItemStruct) -> syn::Result<ClassDef> {
+    let class_attrs = ClassAttrs::parse(&item_struct.attrs)?;
+    let lua_name = class_attrs
+        .name
+        .unwrap_or_else(|| item_struct.ident.to_string());
+    let doc = extract_doc(&item_struct.attrs);
 
     let mut fields = Vec::new();
 
-    for field in &s.fields {
+    for field in &item_struct.fields {
         let field_ident = field
             .ident
             .as_ref()
@@ -109,7 +116,7 @@ fn parse_class(s: &syn::ItemStruct) -> syn::Result<ClassDef> {
         fields.push(FieldDef {
             ident: field_ident.clone(),
             lua_name: lua_field_name,
-            ty: field.ty.clone(),
+            field_type: field.ty.clone(),
             doc: field_doc,
             default: field_attrs.default,
             signature: field_attrs.signature,
@@ -119,27 +126,27 @@ fn parse_class(s: &syn::ItemStruct) -> syn::Result<ClassDef> {
     }
 
     Ok(ClassDef {
-        ident: s.ident.clone(),
+        ident: item_struct.ident.clone(),
         lua_name,
         doc,
         fields,
         methods: Vec::new(),
         annotation_only: class_attrs.annotation_only,
-        span: s.ident.span(),
+        span: item_struct.ident.span(),
     })
 }
 
-fn parse_methods_impl(imp: &syn::ItemImpl) -> syn::Result<(Ident, Vec<MethodDef>)> {
-    let struct_ident = match imp.self_ty.as_ref() {
+fn parse_methods_impl(item_impl: &syn::ItemImpl) -> syn::Result<(Ident, Vec<MethodDef>)> {
+    let struct_ident = match item_impl.self_ty.as_ref() {
         syn::Type::Path(tp) => tp
             .path
             .segments
             .last()
             .map(|s| s.ident.clone())
-            .ok_or_else(|| syn::Error::new_spanned(imp, "cannot determine struct name"))?,
+            .ok_or_else(|| syn::Error::new_spanned(item_impl, "cannot determine struct name"))?,
         _ => {
             return Err(syn::Error::new_spanned(
-                imp,
+                item_impl,
                 "impl must be on a struct type",
             ));
         }
@@ -147,9 +154,10 @@ fn parse_methods_impl(imp: &syn::ItemImpl) -> syn::Result<(Ident, Vec<MethodDef>
 
     let mut methods = Vec::new();
 
-    for item in &imp.items {
+    for item in &item_impl.items {
         let method = match item {
             syn::ImplItem::Fn(f) => parse_method(&struct_ident, f)?,
+
             _ => continue,
         };
 
@@ -188,8 +196,8 @@ fn parse_method(_struct_ident: &Ident, method: &syn::ImplItemFn) -> syn::Result<
         }
     }
 
-    let ret = method.sig.output.clone();
-    let is_fallible = detect_fallibility(&ret);
+    let return_type = method.sig.output.clone();
+    let is_fallible = detect_fallibility(&return_type);
 
     Ok(MethodDef {
         ident: method.sig.ident.clone(),
@@ -197,19 +205,19 @@ fn parse_method(_struct_ident: &Ident, method: &syn::ImplItemFn) -> syn::Result<
         doc,
         receiver,
         args,
-        ret,
+        return_type,
         is_fallible,
         span: method.sig.ident.span(),
     })
 }
 
-fn parse_function(f: &syn::ItemFn) -> syn::Result<FnDef> {
-    let doc = extract_doc(&f.attrs);
-    let lua_name = f.sig.ident.to_string();
+fn parse_function(item_fn: &syn::ItemFn) -> syn::Result<FnDef> {
+    let doc = extract_doc(&item_fn.attrs);
+    let lua_name = item_fn.sig.ident.to_string();
 
     let mut args: Vec<(Ident, syn::Type)> = Vec::new();
 
-    for input in &f.sig.inputs {
+    for input in &item_fn.sig.inputs {
         if let syn::FnArg::Typed(pat_type) = input {
             if let syn::Pat::Ident(pat_ident) = pat_type.pat.as_ref() {
                 args.push((pat_ident.ident.clone(), pat_type.ty.as_ref().clone()));
@@ -217,21 +225,22 @@ fn parse_function(f: &syn::ItemFn) -> syn::Result<FnDef> {
         }
     }
 
-    let ret = f.sig.output.clone();
-    let is_fallible = detect_fallibility(&ret);
+    let return_type = item_fn.sig.output.clone();
+    let is_fallible = detect_fallibility(&return_type);
 
     Ok(FnDef {
-        ident: f.sig.ident.clone(),
+        ident: item_fn.sig.ident.clone(),
         lua_name,
         doc,
         args,
-        ret,
+        return_type,
         is_fallible,
-        span: f.sig.ident.span(),
+        span: item_fn.sig.ident.span(),
     })
 }
 
 #[cfg(test)]
+
 mod tests {
     use syn::parse_quote;
 

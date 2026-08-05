@@ -25,7 +25,7 @@ pub struct ClassDef {
 pub struct FieldDef {
     pub ident: Ident,
     pub lua_name: String,
-    pub ty: Type,
+    pub field_type: Type,
     pub doc: Option<String>,
     pub default: Option<String>,
     pub signature: Option<String>,
@@ -40,7 +40,7 @@ pub struct MethodDef {
     pub doc: Option<String>,
     pub receiver: ReceiverKind,
     pub args: Vec<(Ident, Type)>,
-    pub ret: ReturnType,
+    pub return_type: ReturnType,
     pub is_fallible: bool,
     pub span: Span,
 }
@@ -51,7 +51,7 @@ pub struct FnDef {
     pub lua_name: String,
     pub doc: Option<String>,
     pub args: Vec<(Ident, Type)>,
-    pub ret: ReturnType,
+    pub return_type: ReturnType,
     pub is_fallible: bool,
     pub span: Span,
 }

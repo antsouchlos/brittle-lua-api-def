@@ -10,8 +10,8 @@ mod helpers {
 
     /// Add two integers.
     #[luafunction]
-    fn add(a: i64, b: i64) -> i64 {
-        a + b
+    fn add(lhs: i64, rhs: i64) -> i64 {
+        lhs + rhs
     }
 }
 

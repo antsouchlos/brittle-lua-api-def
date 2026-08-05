@@ -10,11 +10,17 @@ pub fn generate(module: &ModuleDef) -> TokenStream {
     let mut parts: Vec<String> = Vec::new();
     let type_map = &module.type_map;
 
-    for class in &module.classes {
+    let mut sorted_classes: Vec<&ClassDef> = module.classes.iter().collect();
+    sorted_classes.sort_by(|a, b| a.lua_name.cmp(&b.lua_name));
+
+    for class in &sorted_classes {
         emit_class(&mut parts, class, type_map);
     }
 
-    for func in &module.functions {
+    let mut sorted_functions: Vec<&FnDef> = module.functions.iter().collect();
+    sorted_functions.sort_by(|a, b| a.lua_name.cmp(&b.lua_name));
+
+    for func in &sorted_functions {
         emit_free_function(&mut parts, func, type_map);
     }
 
@@ -37,7 +43,10 @@ fn emit_class(parts: &mut Vec<String>, class: &ClassDef, type_map: &BTreeMap<Str
 
     parts.push(format!("--- @class {}", class.lua_name));
 
-    for field in &class.fields {
+    let mut sorted_fields: Vec<&crate::ir::FieldDef> = class.fields.iter().collect();
+    sorted_fields.sort_by(|a, b| a.lua_name.cmp(&b.lua_name));
+
+    for field in sorted_fields {
         if field.skip {
             continue;
         }
@@ -48,7 +57,7 @@ fn emit_class(parts: &mut Vec<String>, class: &ClassDef, type_map: &BTreeMap<Str
             }
         }
 
-        let optional_suffix = if field.default.is_some() && !is_option_type(&field.ty) {
+        let optional_suffix = if field.default.is_some() && !is_option_type(&field.field_type) {
             "?"
         } else {
             ""
@@ -57,7 +66,7 @@ fn emit_class(parts: &mut Vec<String>, class: &ClassDef, type_map: &BTreeMap<Str
         let emmy_type = if let Some(ref sig) = field.signature {
             sig.clone()
         } else {
-            super::type_mapper::rust_type_to_emmylua(&field.ty, type_map)
+            super::type_mapper::rust_type_to_emmylua(&field.field_type, type_map)
         };
         parts.push(format!(
             "--- @field {}{} {}",
@@ -65,7 +74,10 @@ fn emit_class(parts: &mut Vec<String>, class: &ClassDef, type_map: &BTreeMap<Str
         ));
     }
 
-    for method in &class.methods {
+    let mut sorted_methods: Vec<&crate::ir::MethodDef> = class.methods.iter().collect();
+    sorted_methods.sort_by(|a, b| a.lua_name.cmp(&b.lua_name));
+
+    for method in sorted_methods {
         emit_method(parts, method, &class.lua_name, type_map);
     }
 
@@ -84,7 +96,7 @@ fn emit_method(
         }
     }
 
-    let ret_type = match &method.ret {
+    let ret_type = match &method.return_type {
         syn::ReturnType::Type(_, ty) => {
             let inner = if method.is_fallible {
                 unwrap_result_type(ty)
@@ -95,6 +107,7 @@ fn emit_method(
             let emmy = super::type_mapper::rust_type_to_emmylua(&resolved, type_map);
             format!(" {}", emmy)
         }
+
         syn::ReturnType::Default => String::new(),
     };
 
@@ -115,6 +128,7 @@ fn emit_method(
                 format!("fun({}):{}", arg_types.join(", "), ret_type)
             }
         }
+
         _ => {
             let self_param = "self";
             let all_args = std::iter::once(self_param.to_string())
@@ -145,7 +159,7 @@ fn emit_free_function(parts: &mut Vec<String>, func: &FnDef, type_map: &BTreeMap
         parts.push(format!("--- @param {} {}", name, emmy));
     }
 
-    let ret_type = match &func.ret {
+    let ret_type = match &func.return_type {
         syn::ReturnType::Type(_, ty) => {
             let inner = if func.is_fallible {
                 unwrap_result_type(ty)
@@ -156,6 +170,7 @@ fn emit_free_function(parts: &mut Vec<String>, func: &FnDef, type_map: &BTreeMap
             let emmy = super::type_mapper::rust_type_to_emmylua(&inner, type_map);
             format!("--- @return {}", emmy)
         }
+
         syn::ReturnType::Default => String::new(),
     };
 
@@ -220,11 +235,13 @@ fn resolve_self(ty: &Type, class_name: &str) -> Type {
                 path: new_path,
             })
         }
+
         Type::Reference(ref_type) => {
             let mut new_ref = ref_type.clone();
             new_ref.elem = Box::new(resolve_self(&ref_type.elem, class_name));
             Type::Reference(new_ref)
         }
+
         other => other.clone(),
     }
 }
@@ -247,6 +264,7 @@ fn resolve_self_args(args: &syn::PathArguments, class_name: &str) -> syn::PathAr
             new_ab.args = syn::punctuated::Punctuated::from_iter(resolved);
             syn::PathArguments::AngleBracketed(new_ab)
         }
+
         other => other.clone(),
     }
 }
@@ -262,6 +280,7 @@ fn is_option_type(ty: &Type) -> bool {
 }
 
 #[cfg(test)]
+
 mod tests {
     use std::collections::BTreeMap;
 
@@ -305,7 +324,7 @@ mod tests {
             fields: vec![FieldDef {
                 ident: parse_quote! { port },
                 lua_name: "port".to_string(),
-                ty: parse_quote! { u16 },
+                field_type: parse_quote! { u16 },
                 doc: None,
                 default: None,
                 signature: None,
@@ -340,7 +359,7 @@ mod tests {
                 doc: None,
                 receiver: crate::ir::ReceiverKind::Ref,
                 args: vec![],
-                ret: syn::ReturnType::Default,
+                return_type: syn::ReturnType::Default,
                 is_fallible: false,
                 span: Span::call_site(),
             }],
@@ -384,7 +403,7 @@ mod tests {
                 doc: None,
                 receiver: crate::ir::ReceiverKind::Ref,
                 args: vec![],
-                ret: syn::ReturnType::Type(
+                return_type: syn::ReturnType::Type(
                     parse_quote! { -> },
                     Box::new(parse_quote! { Result<String, mlua::Error> }),
                 ),
@@ -422,7 +441,10 @@ mod tests {
                 doc: None,
                 receiver: crate::ir::ReceiverKind::Ref,
                 args: vec![],
-                ret: syn::ReturnType::Type(parse_quote! { -> }, Box::new(parse_quote! { u16 })),
+                return_type: syn::ReturnType::Type(
+                    parse_quote! { -> },
+                    Box::new(parse_quote! { u16 }),
+                ),
                 is_fallible: false,
                 span: Span::call_site(),
             }],
@@ -457,7 +479,7 @@ mod tests {
                 doc: None,
                 receiver: crate::ir::ReceiverKind::None,
                 args: vec![],
-                ret: syn::ReturnType::Type(
+                return_type: syn::ReturnType::Type(
                     parse_quote! { -> },
                     Box::new(parse_quote! { mlua::Result<Self> }),
                 ),
@@ -491,7 +513,7 @@ mod tests {
                 lua_name: "compute".to_string(),
                 doc: None,
                 args: vec![],
-                ret: syn::ReturnType::Type(
+                return_type: syn::ReturnType::Type(
                     parse_quote! { -> },
                     Box::new(parse_quote! { Result<i64, mlua::Error> }),
                 ),
@@ -519,7 +541,10 @@ mod tests {
                 lua_name: "get_value".to_string(),
                 doc: None,
                 args: vec![],
-                ret: syn::ReturnType::Type(parse_quote! { -> }, Box::new(parse_quote! { String })),
+                return_type: syn::ReturnType::Type(
+                    parse_quote! { -> },
+                    Box::new(parse_quote! { String }),
+                ),
                 is_fallible: false,
                 span: Span::call_site(),
             }],
@@ -547,7 +572,7 @@ mod tests {
             fields: vec![FieldDef {
                 ident: parse_quote! { log_dir },
                 lua_name: "log_dir".to_string(),
-                ty: parse_quote! { LuaPathBuf },
+                field_type: parse_quote! { LuaPathBuf },
                 doc: None,
                 default: None,
                 signature: None,
@@ -590,7 +615,7 @@ mod tests {
                 doc: None,
                 receiver: crate::ir::ReceiverKind::Ref,
                 args: vec![],
-                ret: syn::ReturnType::Type(
+                return_type: syn::ReturnType::Type(
                     parse_quote! { -> },
                     Box::new(parse_quote! { LuaPathBuf }),
                 ),
@@ -624,7 +649,7 @@ mod tests {
             fields: vec![FieldDef {
                 ident: parse_quote! { parser },
                 lua_name: "parser".to_string(),
-                ty: parse_quote! { mlua::Function },
+                field_type: parse_quote! { mlua::Function },
                 doc: None,
                 default: None,
                 signature: Some("fun(string): PublicationMetadata".to_string()),
@@ -665,7 +690,7 @@ mod tests {
                 FieldDef {
                     ident: parse_quote! { title },
                     lua_name: "title".to_string(),
-                    ty: parse_quote! { String },
+                    field_type: parse_quote! { String },
                     doc: None,
                     default: None,
                     signature: None,
@@ -675,7 +700,7 @@ mod tests {
                 FieldDef {
                     ident: parse_quote! { year },
                     lua_name: "year".to_string(),
-                    ty: parse_quote! { i32 },
+                    field_type: parse_quote! { i32 },
                     doc: None,
                     default: None,
                     signature: None,
@@ -710,7 +735,7 @@ mod tests {
                 FieldDef {
                     ident: parse_quote! { host },
                     lua_name: "host".to_string(),
-                    ty: parse_quote! { String },
+                    field_type: parse_quote! { String },
                     doc: None,
                     default: None,
                     signature: None,
@@ -720,7 +745,7 @@ mod tests {
                 FieldDef {
                     ident: parse_quote! { port },
                     lua_name: "port".to_string(),
-                    ty: parse_quote! { u16 },
+                    field_type: parse_quote! { u16 },
                     doc: None,
                     default: Some("3000".to_string()),
                     signature: None,

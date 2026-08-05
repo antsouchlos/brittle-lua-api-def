@@ -5,6 +5,7 @@ use proc_macro2::Span;
 use crate::ir::{ModuleDef, ReceiverKind};
 
 #[derive(Debug)]
+
 pub struct Diagnostic {
     pub message: String,
     pub span: Span,
@@ -41,18 +42,18 @@ pub fn validate(module: &ModuleDef) -> Result<(), Vec<Diagnostic>> {
             if !class.annotation_only
                 && field.skip
                 && field.default.is_none()
-                && !is_option_type(&field.ty)
+                && !is_option_type(&field.field_type)
             {
                 diagnostics.push(Diagnostic {
                     message: format!(
-                        "skipped field '{}' has no default — add #[lua(default = \"...\")] or make it Option<T>",
+                        "skipped field '{}' has no default: add #[lua(default = \"...\")] or make it Option<T>",
                         field.ident
                     ),
                     span: field.span,
                 });
             }
 
-            if field.skip && field.default.is_some() && is_option_type(&field.ty) {
+            if field.skip && field.default.is_some() && is_option_type(&field.field_type) {
                 // Valid: has default or Option
             }
         }
@@ -70,7 +71,7 @@ pub fn validate(module: &ModuleDef) -> Result<(), Vec<Diagnostic>> {
         for method in &class.methods {
             if method.receiver == ReceiverKind::Owned
                 && !method.is_fallible
-                && returns_self(&method.ret, &class.ident)
+                && returns_self(&method.return_type, &class.ident)
             {
                 diagnostics.push(Diagnostic {
                     message: format!(
@@ -110,8 +111,8 @@ fn is_option_type(ty: &syn::Type) -> bool {
     false
 }
 
-fn returns_self(ret: &syn::ReturnType, self_ident: &syn::Ident) -> bool {
-    match ret {
+fn returns_self(return_type: &syn::ReturnType, self_ident: &syn::Ident) -> bool {
+    match return_type {
         syn::ReturnType::Type(_, ty) => {
             if let syn::Type::Path(tp) = ty.as_ref() {
                 if let Some(seg) = tp.path.segments.last() {
@@ -120,11 +121,13 @@ fn returns_self(ret: &syn::ReturnType, self_ident: &syn::Ident) -> bool {
             }
             false
         }
+
         syn::ReturnType::Default => false,
     }
 }
 
 #[cfg(test)]
+
 mod tests {
     use super::*;
     use crate::ir::{ClassDef, FieldDef, FnDef, MethodDef, ModuleDef, ReceiverKind};
@@ -178,7 +181,7 @@ mod tests {
             doc: None,
             receiver: ReceiverKind::None,
             args: vec![],
-            ret: syn::ReturnType::Default,
+            return_type: syn::ReturnType::Default,
             is_fallible: false,
             span: call_site(),
         };
@@ -188,7 +191,7 @@ mod tests {
             doc: None,
             receiver: ReceiverKind::None,
             args: vec![],
-            ret: syn::ReturnType::Default,
+            return_type: syn::ReturnType::Default,
             is_fallible: false,
             span: call_site(),
         };
@@ -222,7 +225,7 @@ mod tests {
             lua_name: "my_func".into(),
             doc: None,
             args: vec![],
-            ret: syn::ReturnType::Default,
+            return_type: syn::ReturnType::Default,
             is_fallible: false,
             span: call_site(),
         };
@@ -231,7 +234,7 @@ mod tests {
             lua_name: "my_func".into(),
             doc: None,
             args: vec![],
-            ret: syn::ReturnType::Default,
+            return_type: syn::ReturnType::Default,
             is_fallible: false,
             span: call_site(),
         };
@@ -254,7 +257,7 @@ mod tests {
         let field = FieldDef {
             ident: parse_quote! { my_field },
             lua_name: "my_field".into(),
-            ty: parse_quote! { i32 },
+            field_type: parse_quote! { i32 },
             doc: None,
             default: None,
             signature: None,
@@ -289,7 +292,7 @@ mod tests {
         let field = FieldDef {
             ident: parse_quote! { my_field },
             lua_name: "my_field".into(),
-            ty: parse_quote! { Option<String> },
+            field_type: parse_quote! { Option<String> },
             doc: None,
             default: None,
             signature: None,
@@ -319,7 +322,7 @@ mod tests {
         let field = FieldDef {
             ident: parse_quote! { my_field },
             lua_name: "my_field".into(),
-            ty: parse_quote! { i32 },
+            field_type: parse_quote! { i32 },
             doc: None,
             default: Some("0".into()),
             signature: None,
@@ -352,7 +355,7 @@ mod tests {
             doc: None,
             receiver: ReceiverKind::Owned,
             args: vec![],
-            ret: parse_quote! { -> MyClass },
+            return_type: parse_quote! { -> MyClass },
             is_fallible: false,
             span: call_site(),
         };
@@ -384,7 +387,7 @@ mod tests {
         let field = FieldDef {
             ident: parse_quote! { name },
             lua_name: "name".into(),
-            ty: parse_quote! { String },
+            field_type: parse_quote! { String },
             doc: None,
             default: None,
             signature: None,
@@ -397,7 +400,7 @@ mod tests {
             doc: None,
             receiver: ReceiverKind::Ref,
             args: vec![],
-            ret: syn::ReturnType::Default,
+            return_type: syn::ReturnType::Default,
             is_fallible: false,
             span: call_site(),
         };
@@ -415,7 +418,7 @@ mod tests {
             lua_name: "my_func".into(),
             doc: None,
             args: vec![],
-            ret: syn::ReturnType::Default,
+            return_type: syn::ReturnType::Default,
             is_fallible: false,
             span: call_site(),
         };
@@ -455,7 +458,7 @@ mod tests {
             doc: None,
             receiver: ReceiverKind::None,
             args: vec![],
-            ret: syn::ReturnType::Default,
+            return_type: syn::ReturnType::Default,
             is_fallible: false,
             span: call_site(),
         };
@@ -465,7 +468,7 @@ mod tests {
             doc: None,
             receiver: ReceiverKind::None,
             args: vec![],
-            ret: syn::ReturnType::Default,
+            return_type: syn::ReturnType::Default,
             is_fallible: false,
             span: call_site(),
         };
@@ -473,7 +476,7 @@ mod tests {
         let skipped_field = FieldDef {
             ident: parse_quote! { bad_field },
             lua_name: "bad_field".into(),
-            ty: parse_quote! { i32 },
+            field_type: parse_quote! { i32 },
             doc: None,
             default: None,
             signature: None,
@@ -510,7 +513,7 @@ mod tests {
             doc: None,
             receiver: ReceiverKind::None,
             args: vec![],
-            ret: syn::ReturnType::Default,
+            return_type: syn::ReturnType::Default,
             is_fallible: false,
             span: call_site(),
         };
@@ -540,7 +543,7 @@ mod tests {
         let field = FieldDef {
             ident: parse_quote! { secret },
             lua_name: "secret".into(),
-            ty: parse_quote! { i32 },
+            field_type: parse_quote! { i32 },
             doc: None,
             default: None,
             signature: None,

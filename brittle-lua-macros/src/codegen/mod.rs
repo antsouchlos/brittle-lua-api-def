@@ -11,7 +11,16 @@ mod userdata;
 
 pub fn generate(module: &ModuleDef, item_mod: &syn::ItemMod, crate_path_str: &str) -> TokenStream {
     let crate_path: syn::Path =
-        syn::parse_str(crate_path_str).unwrap_or_else(|_| syn::parse_str("::brittle_lua").unwrap());
+        match syn::parse_str(crate_path_str).or_else(|_| syn::parse_str("::brittle_lua")) {
+            Ok(path) => path,
+            Err(e) => {
+                return syn::Error::new(
+                    proc_macro2::Span::call_site(),
+                    format!("invalid crate path: {}", e),
+                )
+                .to_compile_error();
+            }
+        };
 
     let attrs = &item_mod.attrs;
     let vis = &item_mod.vis;
@@ -135,6 +144,7 @@ fn strip_lua_attrs(item: &syn::Item) -> TokenStream {
                 #vis struct #ident #generics #struct_body
             }
         }
+
         syn::Item::Impl(i) => {
             let attrs: Vec<_> = i
                 .attrs
@@ -169,6 +179,7 @@ fn strip_lua_attrs(item: &syn::Item) -> TokenStream {
                 }
             }
         }
+
         syn::Item::Fn(f) => {
             let attrs: Vec<_> = f
                 .attrs
@@ -184,6 +195,7 @@ fn strip_lua_attrs(item: &syn::Item) -> TokenStream {
                 #vis #sig #block
             }
         }
+
         _ => quote! { #item },
     }
 }

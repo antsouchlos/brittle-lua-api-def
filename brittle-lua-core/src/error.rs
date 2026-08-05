@@ -14,9 +14,9 @@ pub fn field_type_mismatch(struct_name: &str, field_name: &str, details: String)
     ))
 }
 
-pub fn wrong_arguments_count(expected: usize, got: usize) -> Error {
+pub fn wrong_arguments_count(expected: usize, actual: usize) -> Error {
     Error::external(format!(
         "wrong number of arguments: expected {}, got {}",
-        expected, got
+        expected, actual
     ))
 }

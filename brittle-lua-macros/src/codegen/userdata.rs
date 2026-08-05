@@ -58,6 +58,7 @@ pub fn generate(class: &ClassDef, crate_path: &syn::Path) -> TokenStream {
                         }
                     }
                 }
+
                 ReceiverKind::Ref => {
                     let wrap_return = if method.is_fallible {
                         quote! { Self::#method_ident(this, #(#arg_names),*).map_err(#crate_path::mlua::Error::external) }
@@ -79,6 +80,7 @@ pub fn generate(class: &ClassDef, crate_path: &syn::Path) -> TokenStream {
                         }
                     }
                 }
+
                 ReceiverKind::MutRef => {
                     let wrap_return = if method.is_fallible {
                         quote! { Self::#method_ident(this, #(#arg_names),*).map_err(#crate_path::mlua::Error::external) }
@@ -100,6 +102,7 @@ pub fn generate(class: &ClassDef, crate_path: &syn::Path) -> TokenStream {
                         }
                     }
                 }
+
                 ReceiverKind::Owned => {
                     let wrap_return = if method.is_fallible {
                         quote! {
@@ -155,6 +158,7 @@ pub fn generate(class: &ClassDef, crate_path: &syn::Path) -> TokenStream {
 }
 
 #[cfg(test)]
+
 mod tests {
     use super::*;
     use crate::ir::{FieldDef, MethodDef};
@@ -170,7 +174,7 @@ mod tests {
             fields: vec![FieldDef {
                 ident: parse_quote! { x },
                 lua_name: "x".to_string(),
-                ty: parse_quote! { String },
+                field_type: parse_quote! { String },
                 doc: None,
                 default: None,
                 signature: None,
@@ -202,7 +206,7 @@ mod tests {
                 doc: None,
                 receiver: ReceiverKind::Ref,
                 args: vec![],
-                ret: syn::ReturnType::Default,
+                return_type: syn::ReturnType::Default,
                 is_fallible: false,
                 span: Span::call_site(),
             }],
@@ -225,7 +229,7 @@ mod tests {
             fields: vec![FieldDef {
                 ident: parse_quote! { secret },
                 lua_name: "secret".to_string(),
-                ty: parse_quote! { String },
+                field_type: parse_quote! { String },
                 doc: None,
                 default: None,
                 signature: None,
@@ -256,7 +260,7 @@ mod tests {
                 doc: None,
                 receiver: ReceiverKind::None,
                 args: vec![(parse_quote! { port }, parse_quote! { u16 })],
-                ret: parse_quote! { -> Self },
+                return_type: parse_quote! { -> Self },
                 is_fallible: true,
                 span: Span::call_site(),
             }],

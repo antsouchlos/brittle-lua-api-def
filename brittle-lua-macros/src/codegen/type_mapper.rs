@@ -62,7 +62,9 @@ pub fn rust_type_to_emmylua(ty: &Type, type_map: &BTreeMap<String, String>) -> S
                 }
             }
         }
+
         Type::Reference(ref_type) => rust_type_to_emmylua(ref_type.elem.as_ref(), type_map),
+
         Type::Tuple(tuple) => {
             if tuple.elems.is_empty() {
                 return "nil".to_string();
@@ -75,11 +77,13 @@ pub fn rust_type_to_emmylua(ty: &Type, type_map: &BTreeMap<String, String>) -> S
                 .collect();
             format!("({})", types.join(", "))
         }
+
         _ => "any".to_string(),
     }
 }
 
 #[cfg(test)]
+
 mod tests {
     use super::*;
     use syn::parse_quote;

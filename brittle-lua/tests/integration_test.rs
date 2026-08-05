@@ -5,6 +5,7 @@ mod api {
     /// A server configuration.
     #[luaclass(name = "ServerConfig")]
     #[derive(Clone)]
+
     pub struct ServerConfig {
         /// The bind address.
         pub bind: String,
@@ -20,6 +21,7 @@ mod api {
 
     #[luaclass]
     #[derive(Clone)]
+
     pub struct LogConfig {
         pub level: String,
         pub file: Option<String>,
@@ -62,6 +64,7 @@ mod api_empty {
 mod api_multi {
     #[luaclass]
     #[derive(Clone)]
+
     pub struct MultiMethod {
         pub value: i32,
     }
@@ -89,6 +92,7 @@ mod api_multi {
 mod api_missing {
     #[luaclass]
     #[derive(Debug)]
+
     pub struct RequiredFields {
         pub name: String,
         pub age: i32,
@@ -99,6 +103,7 @@ mod api_missing {
 mod api_type_mismatch {
     #[luaclass]
     #[derive(Debug)]
+
     pub struct TypedField {
         pub count: i32,
     }
@@ -108,6 +113,7 @@ mod api_type_mismatch {
 mod api_rename {
     #[luaclass]
     #[derive(Clone)]
+
     pub struct RenamedField {
         #[lua(rename = "server_port")]
         pub port: u16,
@@ -118,6 +124,7 @@ mod api_rename {
 mod api_newtype {
     #[lua_newtype(to = "string")]
     #[derive(Debug, Clone)]
+
     pub struct LuaPathBuf(pub String);
 
     impl mlua::FromLua for LuaPathBuf {
@@ -135,6 +142,7 @@ mod api_newtype {
 
     #[luaclass]
     #[derive(Clone)]
+
     pub struct AppConfig {
         pub data_dir: LuaPathBuf,
         pub port: u16,
@@ -343,6 +351,7 @@ fn test_newtype_emmylua_maps_to_string() {
 mod api_signature {
     #[luaclass]
     #[derive(Clone)]
+
     pub struct RefParser {
         pub file_extension: String,
         #[lua(signature = "fun(string): PublicationMetadata")]
@@ -354,6 +363,7 @@ mod api_signature {
 mod api_annotation_only {
     #[luaclass(annotation, name = "PubMeta")]
     #[derive(Clone)]
+
     pub struct PublicationMetadata {
         pub title: String,
         pub author: String,
@@ -401,7 +411,9 @@ fn test_annotation_only_no_register() {
     let lua = Lua::new();
     let result = api_annotation_only::register(&lua);
     assert!(result.is_ok());
+
     // annotation-only classes should not be registered as proxies
+
     let result: mlua::Result<mlua::Value> = lua.load("return PubMeta").eval();
     assert!(result.is_err() || matches!(result, Ok(mlua::Value::Nil)));
 }
@@ -414,6 +426,7 @@ fn test_signature_ref_parser_register() {
     api_signature::register(&lua).expect("register");
 
     // Verify class is registered and callable via Lua
+
     let result: mlua::Result<mlua::Value> = lua.load("return RefParser").eval();
     assert!(result.is_ok());
 }

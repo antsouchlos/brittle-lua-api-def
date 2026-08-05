@@ -8,9 +8,10 @@ use proc_macro::TokenStream;
 use quote::quote;
 
 #[proc_macro_attribute]
-pub fn lua_module(_attr: TokenStream, item: TokenStream) -> TokenStream {
+pub fn lua_module(attr: TokenStream, item: TokenStream) -> TokenStream {
     let item_mod = match syn::parse::<syn::ItemMod>(item.clone()) {
         Ok(m) => m,
+
         Err(e) => return e.to_compile_error().into(),
     };
 
@@ -21,6 +22,7 @@ pub fn lua_module(_attr: TokenStream, item: TokenStream) -> TokenStream {
 
     match validator::validate(&module_def) {
         Ok(()) => {}
+
         Err(diagnostics) => {
             let errors: Vec<_> = diagnostics
                 .into_iter()
@@ -30,7 +32,7 @@ pub fn lua_module(_attr: TokenStream, item: TokenStream) -> TokenStream {
         }
     }
 
-    let crate_path = parse_crate_arg(_attr);
+    let crate_path = parse_crate_arg(attr);
 
     codegen::generate(&module_def, &item_mod, &crate_path).into()
 }
@@ -43,6 +45,7 @@ fn parse_crate_arg(attr: TokenStream) -> String {
     let parsed = syn::parse::<CrateArg>(attr);
     match parsed {
         Ok(arg) => arg.path,
+
         Err(_) => "::brittle_lua".to_string(),
     }
 }

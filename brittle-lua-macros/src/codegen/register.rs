@@ -60,6 +60,7 @@ pub fn generate(module: &ModuleDef, crate_path: &syn::Path) -> TokenStream {
 }
 
 #[cfg(test)]
+
 mod tests {
     use super::*;
     use crate::ir::{ClassDef, FnDef};
@@ -98,7 +99,7 @@ mod tests {
             lua_name: "greet".to_string(),
             doc: None,
             args: vec![],
-            ret: syn::ReturnType::Default,
+            return_type: syn::ReturnType::Default,
             is_fallible: false,
             span: Span::call_site(),
         };

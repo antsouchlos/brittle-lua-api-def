@@ -1,6 +1,7 @@
 use syn::{Attribute, Type};
 
 #[derive(Debug, Default)]
+
 pub struct FieldAttrs {
     pub default: Option<String>,
     pub rename: Option<String>,
@@ -38,6 +39,7 @@ impl FieldAttrs {
                     ));
                 }
             }
+
             syn::Meta::NameValue(nv) => {
                 let key = nv.path.get_ident().map(|i| i.to_string());
 
@@ -83,6 +85,7 @@ impl FieldAttrs {
                     }
                 }
             }
+
             syn::Meta::List(_) => {
                 return Err(syn::Error::new_spanned(
                     attr,
@@ -96,6 +99,7 @@ impl FieldAttrs {
 }
 
 #[derive(Debug, Default)]
+
 pub struct ClassAttrs {
     pub name: Option<String>,
     pub annotation_only: bool,
@@ -143,6 +147,7 @@ impl ClassAttrs {
                     }
                 }
             }
+
             syn::Meta::Path(p) => {
                 if p.is_ident("annotation") {
                     if self.annotation_only {
@@ -157,6 +162,7 @@ impl ClassAttrs {
                     ));
                 }
             }
+
             syn::Meta::List(_) => {}
         }
 
@@ -165,6 +171,7 @@ impl ClassAttrs {
 }
 
 #[derive(Debug, Default)]
+
 pub struct MethodAttrs {
     pub name: Option<String>,
 }
@@ -208,12 +215,14 @@ impl MethodAttrs {
                     }
                 }
             }
+
             syn::Meta::Path(p) => {
                 return Err(syn::Error::new_spanned(
                     p,
                     format!("unknown `#[lua({})]` key", quote_path(p)),
                 ));
             }
+
             syn::Meta::List(_) => {
                 return Err(syn::Error::new_spanned(
                     attr,
@@ -227,6 +236,7 @@ impl MethodAttrs {
 }
 
 #[derive(Debug, Default)]
+
 pub struct NewtypeAttrs {
     pub lua_type: Option<String>,
 }
@@ -277,12 +287,14 @@ impl NewtypeAttrs {
                     }
                 }
             }
+
             syn::Meta::Path(p) => {
                 return Err(syn::Error::new_spanned(
                     p,
                     format!("unknown `#[lua_newtype({})]` key", quote_path(p)),
                 ));
             }
+
             syn::Meta::List(_) => {
                 return Err(syn::Error::new_spanned(
                     attr,
@@ -341,6 +353,7 @@ pub fn extract_doc(attrs: &[Attribute]) -> Option<String> {
 pub fn detect_fallibility(ret: &syn::ReturnType) -> bool {
     let ty = match ret {
         syn::ReturnType::Type(_, ty) => ty.as_ref(),
+
         syn::ReturnType::Default => return false,
     };
 
@@ -368,6 +381,7 @@ fn is_lua_result_type(ty: &Type) -> bool {
 }
 
 #[cfg(test)]
+
 mod tests {
     use super::*;
     use syn::parse_quote;

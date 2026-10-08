@@ -94,6 +94,28 @@ pub fn validate(module: &ModuleDef) -> Result<(), Vec<Diagnostic>> {
         }
     }
 
+    let mut registered_names: BTreeSet<&str> = module
+        .classes
+        .iter()
+        .filter(|class| !class.annotation_only)
+        .map(|class| class.lua_name.as_str())
+        .chain(
+            module
+                .functions
+                .iter()
+                .map(|function| function.lua_name.as_str()),
+        )
+        .collect();
+
+    for global in &module.globals {
+        if !registered_names.insert(&global.lua_name) {
+            diagnostics.push(Diagnostic {
+                message: format!("duplicate Lua global name '{}'", global.lua_name),
+                span: global.span,
+            });
+        }
+    }
+
     if diagnostics.is_empty() {
         Ok(())
     } else {
@@ -162,6 +184,7 @@ mod tests {
         let module = ModuleDef {
             classes: vec![class_a, class_b],
             functions: vec![],
+            globals: vec![],
             type_map: BTreeMap::new(),
         };
         let result = validate(&module);
@@ -207,6 +230,7 @@ mod tests {
         let module = ModuleDef {
             classes: vec![class],
             functions: vec![],
+            globals: vec![],
             type_map: BTreeMap::new(),
         };
         let result = validate(&module);
@@ -241,6 +265,7 @@ mod tests {
         let module = ModuleDef {
             classes: vec![],
             functions: vec![func_a, func_b],
+            globals: vec![],
             type_map: BTreeMap::new(),
         };
         let result = validate(&module);
@@ -276,6 +301,7 @@ mod tests {
         let module = ModuleDef {
             classes: vec![class],
             functions: vec![],
+            globals: vec![],
             type_map: BTreeMap::new(),
         };
         let result = validate(&module);
@@ -311,6 +337,7 @@ mod tests {
         let module = ModuleDef {
             classes: vec![class],
             functions: vec![],
+            globals: vec![],
             type_map: BTreeMap::new(),
         };
         let result = validate(&module);
@@ -341,6 +368,7 @@ mod tests {
         let module = ModuleDef {
             classes: vec![class],
             functions: vec![],
+            globals: vec![],
             type_map: BTreeMap::new(),
         };
         let result = validate(&module);
@@ -371,6 +399,7 @@ mod tests {
         let module = ModuleDef {
             classes: vec![class],
             functions: vec![],
+            globals: vec![],
             type_map: BTreeMap::new(),
         };
         let result = validate(&module);
@@ -425,6 +454,7 @@ mod tests {
         let module = ModuleDef {
             classes: vec![class],
             functions: vec![func],
+            globals: vec![],
             type_map: BTreeMap::new(),
         };
         let result = validate(&module);
@@ -497,6 +527,7 @@ mod tests {
         let module = ModuleDef {
             classes: vec![class_a, class_b, class_c],
             functions: vec![],
+            globals: vec![],
             type_map: BTreeMap::new(),
         };
         let result = validate(&module);
@@ -529,6 +560,7 @@ mod tests {
         let module = ModuleDef {
             classes: vec![class],
             functions: vec![],
+            globals: vec![],
             type_map: BTreeMap::new(),
         };
         let result = validate(&module);
@@ -562,9 +594,42 @@ mod tests {
         let module = ModuleDef {
             classes: vec![class],
             functions: vec![],
+            globals: vec![],
             type_map: BTreeMap::new(),
         };
         let result = validate(&module);
         assert!(result.is_ok());
+    }
+
+    #[test]
+
+    fn globals_cannot_shadow_registered_items() {
+        let modules: Vec<syn::ItemMod> = vec![
+            syn::parse_quote! {
+                mod api {
+                    #[luaglobal] fn value() -> u16 { 1 }
+                    #[luaglobal] fn value() -> u16 { 2 }
+                }
+            },
+            syn::parse_quote! {
+                mod api {
+                    #[luaglobal] fn value() -> u16 { 1 }
+                    #[luafunction] fn value() {}
+                }
+            },
+            syn::parse_quote! {
+                mod api {
+                    #[luaglobal] fn value() -> u16 { 1 }
+                    #[luaclass(name = "value")] struct Value { number: u16 }
+                }
+            },
+        ];
+
+        for item in modules {
+            let module = crate::parser::parse(&item).unwrap();
+            let diagnostics = validate(&module).unwrap_err();
+            assert_eq!(diagnostics.len(), 1);
+            assert_eq!(diagnostics[0].message, "duplicate Lua global name 'value'");
+        }
     }
 }

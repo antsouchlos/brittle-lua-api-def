@@ -50,10 +50,23 @@ pub fn generate(module: &ModuleDef, crate_path: &syn::Path) -> TokenStream {
         })
         .collect();
 
+    let global_registrations = module.globals.iter().map(|global| {
+        let lua_name = &global.lua_name;
+        let initializer = &global.ident;
+        let value = if global.is_fallible {
+            quote! { #initializer().map_err(#crate_path::mlua::Error::external)? }
+        } else {
+            quote! { #initializer() }
+        };
+
+        quote! { __lua.globals().set(#lua_name, #value)?; }
+    });
+
     quote! {
         pub fn register(__lua: &#crate_path::mlua::Lua) -> #crate_path::mlua::Result<()> {
             #(#class_registrations)*
             #(#function_registrations)*
+            #(#global_registrations)*
             Ok(())
         }
     }
@@ -82,6 +95,7 @@ mod tests {
         let module = ModuleDef {
             classes: vec![class],
             functions: vec![],
+            globals: vec![],
             type_map: BTreeMap::new(),
         };
         let crate_path: syn::Path = parse_quote! { test_crate };
@@ -106,6 +120,7 @@ mod tests {
         let module = ModuleDef {
             classes: vec![],
             functions: vec![func],
+            globals: vec![],
             type_map: BTreeMap::new(),
         };
         let crate_path: syn::Path = parse_quote! { test_crate };

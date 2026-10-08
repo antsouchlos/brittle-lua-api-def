@@ -7,6 +7,8 @@ use syn::{Ident, ReturnType, Type};
 pub struct ModuleDef {
     pub classes: Vec<ClassDef>,
     pub functions: Vec<FnDef>,
+    /// Initializers whose return values are installed as Lua globals.
+    pub globals: Vec<FnDef>,
     pub type_map: BTreeMap<String, String>,
 }
 

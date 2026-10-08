@@ -73,7 +73,10 @@ fn get_original_items(item_mod: &syn::ItemMod) -> Vec<TokenStream> {
                         || s.attrs.iter().any(|a| a.path().is_ident("lua_newtype"))
                 }
                 syn::Item::Impl(i) => i.attrs.iter().any(|a| a.path().is_ident("luamethods")),
-                syn::Item::Fn(f) => f.attrs.iter().any(|a| a.path().is_ident("luafunction")),
+                syn::Item::Fn(f) => f
+                    .attrs
+                    .iter()
+                    .any(|a| a.path().is_ident("luafunction") || a.path().is_ident("luaglobal")),
                 _ => false,
             };
 
@@ -184,7 +187,7 @@ fn strip_lua_attrs(item: &syn::Item) -> TokenStream {
             let attrs: Vec<_> = f
                 .attrs
                 .iter()
-                .filter(|a| !a.path().is_ident("luafunction"))
+                .filter(|a| !a.path().is_ident("luafunction") && !a.path().is_ident("luaglobal"))
                 .collect();
             let vis = &f.vis;
             let sig = &f.sig;

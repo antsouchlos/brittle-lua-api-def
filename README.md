@@ -16,6 +16,11 @@ mod config {
         pub host: String,
         pub port: u16,
     }
+
+    #[luaglobal]
+    fn default_port() -> u16 {
+        8443
+    }
 }
 
 fn main() -> mlua::Result<()> {
@@ -26,7 +31,7 @@ fn main() -> mlua::Result<()> {
         r#"
         return {
             host = "0.0.0.0",
-            port = 8443
+            port = default_port
         }
         "#
     ).eval()?;

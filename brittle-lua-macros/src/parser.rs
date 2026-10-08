@@ -11,6 +11,7 @@ pub fn parse(item_mod: &syn::ItemMod) -> syn::Result<ModuleDef> {
     let mut classes: Vec<ClassDef> = Vec::new();
     let mut methods_map: BTreeMap<String, Vec<MethodDef>> = BTreeMap::new();
     let mut functions: Vec<FnDef> = Vec::new();
+    let mut globals: Vec<FnDef> = Vec::new();
     let mut type_map: BTreeMap<String, String> = BTreeMap::new();
 
     let items = match &item_mod.content {
@@ -19,6 +20,7 @@ pub fn parse(item_mod: &syn::ItemMod) -> syn::Result<ModuleDef> {
             return Ok(ModuleDef {
                 classes,
                 functions,
+                globals,
                 type_map,
             });
         }
@@ -53,7 +55,9 @@ pub fn parse(item_mod: &syn::ItemMod) -> syn::Result<ModuleDef> {
                 }
             }
             syn::Item::Fn(item_fn) => {
-                if has_attr(&item_fn.attrs, "luafunction") {
+                if has_attr(&item_fn.attrs, "luaglobal") {
+                    globals.push(parse_global(item_fn)?);
+                } else if has_attr(&item_fn.attrs, "luafunction") {
                     let func = parse_function(item_fn)?;
                     functions.push(func);
                 }
@@ -69,12 +73,15 @@ pub fn parse(item_mod: &syn::ItemMod) -> syn::Result<ModuleDef> {
         }
     }
 
-    classes.sort_by(|a, b| a.ident.to_string().cmp(&b.ident.to_string()));
-    functions.sort_by(|a, b| a.ident.to_string().cmp(&b.ident.to_string()));
+    classes.sort_by_key(|class| class.ident.to_string());
+    functions.sort_by_key(|function| function.ident.to_string());
+
+    globals.sort_by(|left, right| left.lua_name.cmp(&right.lua_name));
 
     Ok(ModuleDef {
         classes,
         functions,
+        globals,
         type_map,
     })
 }
@@ -209,6 +216,72 @@ fn parse_method(_struct_ident: &Ident, method: &syn::ImplItemFn) -> syn::Result<
         is_fallible,
         span: method.sig.ident.span(),
     })
+}
+
+fn parse_global(item_fn: &syn::ItemFn) -> syn::Result<FnDef> {
+    for attribute in &item_fn.attrs {
+        if attribute.path().is_ident("luafunction") {
+            return Err(syn::Error::new_spanned(
+                attribute,
+                "#[luaglobal] cannot be combined with #[luafunction]",
+            ));
+        }
+
+        if attribute.path().is_ident("luaglobal") && !matches!(attribute.meta, syn::Meta::Path(_)) {
+            return Err(syn::Error::new_spanned(
+                attribute,
+                "expected bare #[luaglobal]",
+            ));
+        }
+    }
+
+    let signature = &item_fn.sig;
+    if !signature.inputs.is_empty() {
+        return Err(syn::Error::new_spanned(
+            &signature.inputs,
+            "global initializers must take no arguments",
+        ));
+    }
+
+    if matches!(signature.output, syn::ReturnType::Default) {
+        return Err(syn::Error::new_spanned(
+            &signature.ident,
+            "global initializers require an explicit return type",
+        ));
+    }
+
+    if let Some(token) = &signature.asyncness {
+        return Err(syn::Error::new_spanned(
+            token,
+            "global initializers cannot be async",
+        ));
+    }
+
+    if let Some(token) = &signature.unsafety {
+        return Err(syn::Error::new_spanned(
+            token,
+            "global initializers cannot be unsafe",
+        ));
+    }
+
+    if !signature.generics.params.is_empty() || signature.generics.where_clause.is_some() {
+        return Err(syn::Error::new_spanned(
+            &signature.generics,
+            "global initializers cannot be generic",
+        ));
+    }
+
+    if let Some(variadic) = &signature.variadic {
+        return Err(syn::Error::new_spanned(
+            variadic,
+            "global initializers cannot be variadic",
+        ));
+    }
+
+    let mut global = parse_function(item_fn)?;
+    global.lua_name = global.lua_name.trim_start_matches("r#").to_string();
+
+    Ok(global)
 }
 
 fn parse_function(item_fn: &syn::ItemFn) -> syn::Result<FnDef> {
@@ -478,5 +551,71 @@ mod tests {
             result.type_map.get("LuaPathBuf"),
             Some(&"string".to_string())
         );
+    }
+
+    #[test]
+
+    fn global_initializer_signatures_are_validated() {
+        let cases: Vec<(syn::ItemFn, &str)> = vec![
+            (
+                parse_quote! { fn value(argument: u16) -> u16 { argument } },
+                "global initializers must take no arguments",
+            ),
+            (
+                parse_quote! { fn value() {} },
+                "global initializers require an explicit return type",
+            ),
+            (
+                parse_quote! { async fn value() -> u16 { 1 } },
+                "global initializers cannot be async",
+            ),
+            (
+                parse_quote! { unsafe fn value() -> u16 { 1 } },
+                "global initializers cannot be unsafe",
+            ),
+            (
+                parse_quote! { fn value<T>() -> u16 { 1 } },
+                "global initializers cannot be generic",
+            ),
+            (
+                parse_quote! { #[luafunction] fn value() -> u16 { 1 } },
+                "#[luaglobal] cannot be combined with #[luafunction]",
+            ),
+            (
+                parse_quote! { #[luaglobal(name = "value")] fn value() -> u16 { 1 } },
+                "expected bare #[luaglobal]",
+            ),
+        ];
+
+        for (initializer, expected) in cases {
+            let error = super::parse_global(&initializer).err().unwrap();
+            assert_eq!(error.to_string(), expected);
+        }
+    }
+
+    #[test]
+
+    fn globals_are_sorted_and_separate_from_functions() {
+        let module = parse(&parse_quote! {
+            mod api {
+                #[luaglobal]
+                fn zebra() -> u16 { 1 }
+                #[luaglobal]
+                fn apple() -> u16 { 2 }
+                #[luafunction]
+                fn callable() {}
+            }
+        })
+        .unwrap();
+
+        assert_eq!(
+            module
+                .globals
+                .iter()
+                .map(|global| global.lua_name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["apple", "zebra"]
+        );
+        assert_eq!(module.functions.len(), 1);
     }
 }

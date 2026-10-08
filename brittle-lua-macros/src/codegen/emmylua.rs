@@ -24,6 +24,30 @@ pub fn generate(module: &ModuleDef) -> TokenStream {
         emit_free_function(&mut parts, func, type_map);
     }
 
+    let mut sorted_globals: Vec<&FnDef> = module.globals.iter().collect();
+    sorted_globals.sort_by(|left, right| left.lua_name.cmp(&right.lua_name));
+
+    for global in sorted_globals {
+        if let Some(doc) = &global.doc {
+            for line in doc.lines() {
+                parts.push(format!("--- {}", line.trim()));
+            }
+        }
+
+        if let syn::ReturnType::Type(_, return_type) = &global.return_type {
+            let value_type = if global.is_fallible {
+                unwrap_result_type(return_type)
+            } else {
+                return_type.as_ref().clone()
+            };
+            let lua_type = super::type_mapper::rust_type_to_emmylua(&value_type, type_map);
+            parts.push(format!("---@type {}", lua_type));
+        }
+
+        parts.push(format!("{} = nil", global.lua_name));
+        parts.push(String::new());
+    }
+
     parts.push(String::new());
     parts.push("return {}".to_string());
 
@@ -307,6 +331,7 @@ mod tests {
         let module = ModuleDef {
             classes: vec![class],
             functions: vec![],
+            globals: vec![],
             type_map: empty_map(),
         };
         let tokens = generate(&module);
@@ -338,6 +363,7 @@ mod tests {
         let module = ModuleDef {
             classes: vec![class],
             functions: vec![],
+            globals: vec![],
             type_map: empty_map(),
         };
         let tokens = generate(&module);
@@ -369,6 +395,7 @@ mod tests {
         let module = ModuleDef {
             classes: vec![class],
             functions: vec![],
+            globals: vec![],
             type_map: empty_map(),
         };
         let tokens = generate(&module);
@@ -382,6 +409,7 @@ mod tests {
         let module = ModuleDef {
             classes: vec![],
             functions: vec![],
+            globals: vec![],
             type_map: empty_map(),
         };
         let tokens = generate(&module);
@@ -416,6 +444,7 @@ mod tests {
         let module = ModuleDef {
             classes: vec![class],
             functions: vec![],
+            globals: vec![],
             type_map: empty_map(),
         };
         let tokens = generate(&module);
@@ -454,6 +483,7 @@ mod tests {
         let module = ModuleDef {
             classes: vec![class],
             functions: vec![],
+            globals: vec![],
             type_map: empty_map(),
         };
         let tokens = generate(&module);
@@ -492,6 +522,7 @@ mod tests {
         let module = ModuleDef {
             classes: vec![class],
             functions: vec![],
+            globals: vec![],
             type_map: empty_map(),
         };
         let tokens = generate(&module);
@@ -520,6 +551,7 @@ mod tests {
                 is_fallible: true,
                 span: Span::call_site(),
             }],
+            globals: vec![],
             type_map: empty_map(),
         };
         let tokens = generate(&module);
@@ -548,6 +580,7 @@ mod tests {
                 is_fallible: false,
                 span: Span::call_site(),
             }],
+            globals: vec![],
             type_map: empty_map(),
         };
         let tokens = generate(&module);
@@ -586,6 +619,7 @@ mod tests {
         let module = ModuleDef {
             classes: vec![class],
             functions: vec![],
+            globals: vec![],
             type_map,
         };
         let tokens = generate(&module);
@@ -628,6 +662,7 @@ mod tests {
         let module = ModuleDef {
             classes: vec![class],
             functions: vec![],
+            globals: vec![],
             type_map,
         };
         let tokens = generate(&module);
@@ -663,6 +698,7 @@ mod tests {
         let module = ModuleDef {
             classes: vec![class],
             functions: vec![],
+            globals: vec![],
             type_map: empty_map(),
         };
         let tokens = generate(&module);
@@ -715,6 +751,7 @@ mod tests {
         let module = ModuleDef {
             classes: vec![class],
             functions: vec![],
+            globals: vec![],
             type_map: empty_map(),
         };
         let tokens = generate(&module);
@@ -760,6 +797,7 @@ mod tests {
         let module = ModuleDef {
             classes: vec![class],
             functions: vec![],
+            globals: vec![],
             type_map: empty_map(),
         };
         let tokens = generate(&module);

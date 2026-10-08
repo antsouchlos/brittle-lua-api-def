@@ -430,3 +430,94 @@ fn test_signature_ref_parser_register() {
     let result: mlua::Result<mlua::Value> = lua.load("return RefParser").eval();
     assert!(result.is_ok());
 }
+
+#[brittle_lua::lua_module(crate = "brittle_lua")]
+mod api_globals {
+    #[luaclass]
+    #[derive(Clone)]
+
+    pub struct Settings {
+        pub port: u16,
+    }
+
+    #[luaglobal]
+
+    fn settings() -> Settings {
+        Settings { port: 8080 }
+    }
+
+    /// Default server port.
+    #[luaglobal]
+
+    fn default_port() -> u16 {
+        8080
+    }
+
+    #[luaglobal]
+
+    fn application_name() -> Result<String, std::io::Error> {
+        Ok("example".to_string())
+    }
+
+    #[luaglobal]
+
+    fn optional_value() -> Option<String> {
+        None
+    }
+}
+
+#[brittle_lua::lua_module]
+mod api_global_failure {
+    #[luaglobal]
+
+    fn unavailable() -> Result<String, std::io::Error> {
+        Err(std::io::Error::other("global initialization failed"))
+    }
+}
+
+#[test]
+
+fn global_values_are_available_to_lua() -> mlua::Result<()> {
+    let lua = Lua::new();
+    api_globals::register(&lua)?;
+
+    let values: (u16, String, u16, bool) = lua
+        .load("return default_port, application_name, settings.port, optional_value == nil")
+        .eval()?;
+    assert_eq!(values, (8080, "example".to_string(), 8080, true));
+
+    lua.load("settings.port = 9090").exec()?;
+    let settings: mlua::AnyUserData = lua.globals().get("settings")?;
+    assert_eq!(settings.borrow::<api_globals::Settings>()?.port, 9090);
+
+    Ok(())
+}
+
+#[test]
+
+fn lua_reassignment_is_replaced_by_registration() -> mlua::Result<()> {
+    let lua = Lua::new();
+    api_globals::register(&lua)?;
+    lua.load("default_port = 'changed'").exec()?;
+    assert_eq!(lua.globals().get::<String>("default_port")?, "changed");
+
+    api_globals::register(&lua)?;
+    assert_eq!(lua.globals().get::<u16>("default_port")?, 8080);
+
+    Ok(())
+}
+
+#[test]
+
+fn global_initialization_errors_propagate() {
+    let error = api_global_failure::register(&Lua::new()).unwrap_err();
+    assert_eq!(error.to_string(), "global initialization failed");
+}
+
+#[test]
+
+fn global_annotations_include_docs_types_and_sorted_names() {
+    let annotations = api_globals::EMMY_LUA;
+    let globals = annotations.split_once("---@type string").unwrap().1;
+    assert_eq!(globals, "\napplication_name = nil\n\n--- Default server port.\n---@type integer\ndefault_port = nil\n\n---@type string?\noptional_value = nil\n\n---@type Settings\nsettings = nil\n\n\nreturn {}");
+}
